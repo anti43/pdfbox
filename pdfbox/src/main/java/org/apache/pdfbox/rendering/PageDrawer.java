@@ -142,8 +142,8 @@ public class PageDrawer extends PDFStreamEngine
     {
         graphics = (Graphics2D) g;
         pageHeight = (int)pageSize.getHeight();
-        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        graphics.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+//        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+//        graphics.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
         graphics.translate(0, pageHeight);
         graphics.scale(1, -1);
         // TODO use getStroke() to set the initial stroke
@@ -208,8 +208,8 @@ public class PageDrawer extends PDFStreamEngine
                                   throws IOException
     {
         graphics = g;
-        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        graphics.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+//        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+//        graphics.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
 
         initStream(pageDimension, 0);
 
@@ -342,7 +342,7 @@ public class PageDrawer extends PDFStreamEngine
      */
     private void drawGlyph2D(Glyph2D glyph2D, int[] codePoints, AffineTransform at) throws IOException
     {
-        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+//        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         for (int i = 0; i < codePoints.length; i++)
         {
             GeneralPath path = glyph2D.getPathForCharacterCode(codePoints[i]);
@@ -423,7 +423,7 @@ public class PageDrawer extends PDFStreamEngine
         Font awtFont = createAWTFont(font);
         FontRenderContext frc = new FontRenderContext(new AffineTransform(), true, true);
         GlyphVector glyphs = awtFont.createGlyphVector(frc, string);
-        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+//        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         writeFont(at, glyphs);
     }
 
@@ -680,7 +680,7 @@ public class PageDrawer extends PDFStreamEngine
         }
         graphics.setPaint(strokingPaint);
         graphics.setStroke(getStroke());
-        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+//        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
         graphics.setClip(getGraphicsState().getCurrentClippingPath());
         graphics.draw(linePath);
         linePath.reset();
@@ -705,7 +705,7 @@ public class PageDrawer extends PDFStreamEngine
         }
         graphics.setPaint(nonStrokingPaint);
         linePath.setWindingRule(windingRule);
-        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+//        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
         graphics.setClip(getGraphicsState().getCurrentClippingPath());
         graphics.fill(linePath);
         linePath.reset();
@@ -857,7 +857,7 @@ public class PageDrawer extends PDFStreamEngine
         }
         graphics.setComposite(getGraphicsState().getNonStrokeJavaComposite());
         graphics.setPaint(paint);
-        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+//        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
         graphics.fill(getGraphicsState().getCurrentClippingPath());
     }
 }
