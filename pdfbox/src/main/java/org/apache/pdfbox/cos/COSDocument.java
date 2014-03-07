@@ -603,13 +603,13 @@ public class COSDocument extends COSBase implements Closeable
         }
     }
 
-    /**
+    /*
      * Warn the user in the finalizer if he didn't close the PDF document. The method also
      * closes the document just in case, to avoid abandoned temporary files. It's still a good
      * idea for the user to close the PDF document at the earliest possible to conserve resources.
      * @throws IOException if an error occurs while closing the temporary files
      */
-    @Override
+    /*@Override
     protected void finalize() throws IOException
     {
         if (!closed) 
@@ -620,7 +620,7 @@ public class COSDocument extends COSBase implements Closeable
             }
             close();
         }
-    }
+    }*/
 
     /**
      * Controls whether this instance shall issue a warning if the PDF document wasn't closed
