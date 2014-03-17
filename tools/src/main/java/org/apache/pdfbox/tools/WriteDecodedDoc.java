@@ -27,8 +27,7 @@ import org.apache.pdfbox.cos.COSStream;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
 
-import org.apache.pdfbox.exceptions.COSVisitorException;
-import org.apache.pdfbox.exceptions.InvalidPasswordException;
+import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
 
 /**
  * load document and write with all streams decoded.
@@ -56,12 +55,11 @@ public class WriteDecodedDoc
      * @param in The filename used for input.
      * @param out The filename used for output.
      *
-     * @throws IOException If there is an error parsing the document.
-     * @throws COSVisitorException If there is an error while copying the document.
+     * @throws IOException if the output could not be written
      * 
-     * @deprecated use {@link WriteDecodedDoc#doIt(String, String, String)} instead.
+     * @deprecated use {@link WriteDecodedDoc#doIt(String, String, String, boolean)} instead.
      */
-    public void doIt(String in, String out) throws IOException, COSVisitorException
+    public void doIt(String in, String out) throws IOException
     {
         doIt(in, out, "", false);
     }
@@ -74,11 +72,10 @@ public class WriteDecodedDoc
      * @param password The password to open the document.
      * @param useNonSeqParser use the non sequential parser
      *
-     * @throws IOException If there is an error parsing the document.
-     * @throws COSVisitorException If there is an error while copying the document.
+     * @throws IOException if the output could not be written
      */
-    public void doIt(String in, String out, String password, boolean useNonSeqParser) 
-    throws IOException, COSVisitorException
+    public void doIt(String in, String out, String password, boolean useNonSeqParser)
+            throws IOException
     {
         PDDocument doc = null;
         try
@@ -108,11 +105,6 @@ public class WriteDecodedDoc
                         {
                             System.err.println( "Wrong password!!" );
                         }
-                        return;
-                    }
-                    catch( org.apache.pdfbox.exceptions.CryptographyException e )
-                    {
-                        e.printStackTrace();
                         return;
                     }
                 }

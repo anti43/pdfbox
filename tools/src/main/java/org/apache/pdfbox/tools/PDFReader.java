@@ -32,7 +32,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.KeyStroke;
 
-import org.apache.pdfbox.exceptions.InvalidPasswordException;
+import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
 import org.apache.pdfbox.rendering.PDFPrinter;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.tools.gui.PageWrapper;
@@ -356,8 +356,7 @@ public class PDFReader extends JFrame
                 imageFilename = imageFilename.substring(0, imageFilename.length() - 4);
             }
             imageFilename += "_" + (currentPage + 1);
-            ImageIOUtil.writeImage(pageAsImage, "png", imageFilename,
-                                   BufferedImage.TYPE_USHORT_565_RGB, 300);
+            ImageIOUtil.writeImage(pageAsImage, "png", imageFilename, 300);
         }
         catch (IOException exception)
         {
@@ -385,10 +384,6 @@ public class PDFReader extends JFrame
                 catch (InvalidPasswordException e)
                 {
                     System.err.println("Error: The document is encrypted.");
-                }
-                catch (org.apache.pdfbox.exceptions.CryptographyException e)
-                {
-                    e.printStackTrace();
                 }
             }
         }

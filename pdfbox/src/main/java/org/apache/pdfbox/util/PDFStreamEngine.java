@@ -34,7 +34,6 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSObject;
 import org.apache.pdfbox.cos.COSStream;
-import org.apache.pdfbox.exceptions.WrappedIOException;
 import org.apache.pdfbox.pdfparser.PDFStreamParser;
 import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.common.PDMatrix;
@@ -45,55 +44,45 @@ import org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState;
 import org.apache.pdfbox.pdmodel.graphics.state.PDGraphicsState;
 import org.apache.pdfbox.pdmodel.graphics.color.PDColorSpace;
 import org.apache.pdfbox.pdmodel.graphics.PDXObject;
+import org.apache.pdfbox.text.TextPosition;
 import org.apache.pdfbox.util.operator.OperatorProcessor;
+import org.apache.pdfbox.util.operator.PDFOperator;
 
 /**
- * This class will run through a PDF content stream and execute certain operations and provide a callback interface for
- * clients that want to do things with the stream. See the PDFTextStripper class for an example of how to use this
- * class.
- * 
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * 
+ * Processes a PDF content stream and executes certain operations.
+ * Provides a callback interface for clients that want to do things with the stream.
+ * {@see org.apache.pdfbox.util.PDFTextStripper}
+ * @author Ben Litchfield
  */
 public class PDFStreamEngine
 {
     private static final Log LOG = LogFactory.getLog(PDFStreamEngine.class);
 
-    /**
-     * The PDF operators that are ignored by this engine.
-     */
     private final Set<String> unsupportedOperators = new HashSet<String>();
-
-    private PDGraphicsState graphicsState = null;
-
-    private Matrix textMatrix = null;
-    private Matrix textLineMatrix = null;
-    private Stack<PDGraphicsState> graphicsStack = new Stack<PDGraphicsState>();
-
     private Map<String, OperatorProcessor> operators = new HashMap<String, OperatorProcessor>();
+
+    private PDGraphicsState graphicsState;
+
+    private Matrix textMatrix;
+    private Matrix textLineMatrix;
+    private Stack<PDGraphicsState> graphicsStack = new Stack<PDGraphicsState>();
 
     private Stack<PDResources> streamResourcesStack = new Stack<PDResources>();
 
     private int validCharCnt;
     private int totalCharCnt;
 
-    private int pageRotation = 0;
-    private PDRectangle drawingRectangle = null;
-    
-    /**
-     * Flag to skip malformed or otherwise unparseable input where possible.
-     */
-    private boolean forceParsing = false;
+    private int pageRotation;
+    private PDRectangle drawingRectangle;
+
+    // skip malformed or otherwise unparseable input where possible
+    private boolean forceParsing;
 
     /**
-     * Constructor.
+     * Creates a new PDFStreamEngine.
      */
     public PDFStreamEngine()
     {
-        // default constructor
-        validCharCnt = 0;
-        totalCharCnt = 0;
-
     }
 
     /**
@@ -123,19 +112,17 @@ public class PDFStreamEngine
             {
                 try
                 {
-                    Class<?> klass = Class.forName(processorClassName);
-                    OperatorProcessor processor = (OperatorProcessor) klass.newInstance();
+                    Class<?> cls = Class.forName(processorClassName);
+                    OperatorProcessor processor = (OperatorProcessor) cls.newInstance();
                     registerOperatorProcessor(operator, processor);
                 }
                 catch (Exception e)
                 {
-                    throw new WrappedIOException("OperatorProcessor class " + processorClassName
-                            + " could not be instantiated", e);
+                    throw new IOException("OperatorProcessor class " + processorClassName +
+                                          " could not be instantiated", e);
                 }
             }
         }
-        validCharCnt = 0;
-        totalCharCnt = 0;
     }
 
     /**
@@ -365,7 +352,10 @@ public class PDFStreamEngine
             // so lets make it a little bit smaller.
             spaceWidthText *= .80f;
         }
-
+        else
+        {
+            spaceWidthText = 1.0f; // if could not find font, use a generic value
+        }
         float maxVerticalDisplacementText = 0;
 
         Matrix textStateParameters = new Matrix();

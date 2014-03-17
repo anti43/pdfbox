@@ -17,24 +17,22 @@
 package org.apache.pdfbox.pdmodel.graphics.image;
 
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.IOException;
-import java.io.OutputStream;
+import java.util.Iterator;
 
-import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSName;
+import org.apache.pdfbox.filter.MissingImageReaderException;
 import org.apache.pdfbox.io.IOUtils;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.common.PDStream;
-import org.w3c.dom.Element;
-
-import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
-import javax.imageio.ImageTypeSpecifier;
-import javax.imageio.ImageWriter;
-import javax.imageio.metadata.IIOMetadata;
-import javax.imageio.plugins.jpeg.JPEGImageWriteParam;
-import javax.imageio.stream.ImageOutputStream;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
+import org.apache.pdfbox.cos.COSStream;
+import org.apache.pdfbox.util.ImageIOUtil;
 
 /**
  * Factory for creating a PDImageXObject containing a JPEG compressed image.
@@ -48,24 +46,29 @@ public final class JPEGFactory extends ImageFactory
 
     /**
      * Creates a new JPEG Image XObject from an input stream containing JPEG data.
+     * 
      * The input stream data will be preserved and embedded in the PDF file without modification.
      * @param document the document where the image will be created
      * @param stream a stream of JPEG data
      * @return a new Image XObject
+     * 
      * @throws IOException if the input stream cannot be read
      */
     public static PDImageXObject createFromStream(PDDocument document, InputStream stream)
             throws IOException
     {
+        // copy stream
+        ByteArrayInputStream byteStream = new ByteArrayInputStream(IOUtils.toByteArray(stream));
+
+        // read image
+        BufferedImage awtImage = readJPEG(byteStream);
+        byteStream.reset();
+
         // create Image XObject from stream
-        PDImageXObject pdImage = new PDImageXObject(new PDStream(document, stream, true), null);
+        PDImageXObject pdImage = new PDImageXObject(document, byteStream);
 
         // add DCT filter
         pdImage.getCOSStream().setItem(COSName.FILTER, COSName.DCT_DECODE);
-
-        // read image
-        ImageIO.setUseCache(false);
-        BufferedImage awtImage = ImageIO.read(stream);
 
         // no alpha
         if (awtImage.getColorModel().hasAlpha())
@@ -77,6 +80,45 @@ public final class JPEGFactory extends ImageFactory
         setPropertiesFromAWT(awtImage, pdImage);
 
         return pdImage;
+    }
+
+    private static BufferedImage readJPEG(InputStream stream) throws IOException
+    {
+        // find suitable image reader
+        Iterator readers = ImageIO.getImageReadersByFormatName("JPEG");
+        ImageReader reader = null;
+        while (readers.hasNext())
+        {
+            reader = (ImageReader) readers.next();
+            if (reader.canReadRaster())
+            {
+                break;
+            }
+        }
+
+        if (reader == null)
+        {
+            throw new MissingImageReaderException("Cannot read JPEG image: " +
+                    "a suitable JAI I/O image filter is not installed");
+        }
+
+        ImageInputStream iis = null;
+        try
+        {
+            iis = ImageIO.createImageInputStream(stream);
+            reader.setInput(iis);
+
+            ImageIO.setUseCache(false);
+            return reader.read(0);
+        }
+        finally
+        {
+            if (iis != null)
+            {
+                iis.close();
+            }
+            reader.dispose();
+        }
     }
 
     /**
@@ -121,75 +163,34 @@ public final class JPEGFactory extends ImageFactory
     {
         return createJPEG(document, image, quality, dpi);
     }
-
+    
     // Creates an Image XObject from a Buffered Image using JAI Image I/O
     private static PDImageXObject createJPEG(PDDocument document, BufferedImage image,
                                              float quality, int dpi) throws IOException
     {
         // extract alpha channel (if any)
-        BufferedImage awtColor = getColorImage(image);
-        BufferedImage awtAlpha = getAlphaImage(image);
+        BufferedImage awtColorImage = getColorImage(image);
+        BufferedImage awtAlphaImage = getAlphaImage(image);
 
         // create XObject
-        PDImageXObject pdImage = new PDImageXObject(new PDStream(document), null);
-
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        ImageIOUtil.writeImage(image, "jpeg", bos, dpi, quality);
+        ByteArrayInputStream byteStream = new ByteArrayInputStream(bos.toByteArray());
+        PDImageXObject pdImage = new PDImageXObject(document, byteStream);
+        
         // add DCT filter
-        COSDictionary dict = pdImage.getCOSStream();
-        pdImage.getCOSStream().setItem(COSName.FILTER, COSName.DCT_DECODE);
+        COSStream dict = pdImage.getCOSStream();
+        dict.setItem(COSName.FILTER, COSName.DCT_DECODE);
 
         // alpha -> soft mask
-        if (awtAlpha != null)
+        if (awtAlphaImage != null)
         {
-            PDImage xAlpha = JPEGFactory.createFromImage(document, awtAlpha, quality);
+            PDImage xAlpha = JPEGFactory.createFromImage(document, awtAlphaImage, quality);
             dict.setItem(COSName.SMASK, xAlpha);
         }
 
         // set properties (width, height, depth, color space, etc.)
-        setPropertiesFromAWT(awtColor, pdImage);
-
-        // encode to JPEG
-        OutputStream out = null;
-        ImageOutputStream ios = null;
-        ImageWriter imageWriter = null;
-        try
-        {
-            out = pdImage.getCOSStream().createFilteredStream();
-
-            // find JAI writer
-            imageWriter = ImageIO.getImageWritersBySuffix("jpeg").next();
-            ios = ImageIO.createImageOutputStream(out);
-            imageWriter.setOutput(ios);
-
-            // add compression
-            JPEGImageWriteParam jpegParam = (JPEGImageWriteParam)imageWriter.getDefaultWriteParam();
-            jpegParam.setCompressionMode(JPEGImageWriteParam.MODE_EXPLICIT);
-            jpegParam.setCompressionQuality(quality);
-
-            // add metadata
-            ImageTypeSpecifier imageTypeSpecifier = new ImageTypeSpecifier(image);
-            IIOMetadata data = imageWriter.getDefaultImageMetadata(imageTypeSpecifier, jpegParam);
-            Element tree = (Element)data.getAsTree("javax_imageio_jpeg_image_1.0");
-            Element jfif = (Element)tree.getElementsByTagName("app0JFIF").item(0);
-            jfif.setAttribute("Xdensity", Integer.toString(dpi));
-            jfif.setAttribute("Ydensity", Integer.toString(dpi));
-            jfif.setAttribute("resUnits", "1"); // 1 = dots/inch
-
-            // write
-            imageWriter.write(data, new IIOImage(image, null, null), jpegParam);
-        }
-        finally
-        {
-            // clean up
-            IOUtils.closeQuietly(out);
-            if (ios != null)
-            {
-                ios.close();
-            }
-            if (imageWriter != null)
-            {
-                imageWriter.dispose();
-            }
-        }
+        setPropertiesFromAWT(awtColorImage, pdImage);
 
         return pdImage;
     }

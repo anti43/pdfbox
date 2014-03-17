@@ -36,17 +36,18 @@ import java.util.regex.Pattern;
 
 import org.apache.pdfbox.cos.COSDocument;
 import org.apache.pdfbox.cos.COSStream;
-import org.apache.pdfbox.exceptions.CryptographyException;
-import org.apache.pdfbox.exceptions.InvalidPasswordException;
-import org.apache.pdfbox.exceptions.WrappedIOException;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.common.COSObjectable;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.common.PDStream;
+import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
 import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineItem;
 import org.apache.pdfbox.pdmodel.interactive.pagenavigation.PDThreadBead;
-
+import org.apache.pdfbox.text.PositionWrapper;
+import org.apache.pdfbox.text.TextNormalize;
+import org.apache.pdfbox.text.TextPosition;
+import org.apache.pdfbox.text.TextPositionComparator;
 
 /**
  * This class will take a pdf document and strip out all of the text and ignore the
@@ -75,30 +76,39 @@ public class PDFTextStripper extends PDFStreamEngine
     //    pdftextstripper.drop
     static
     {
-        String prop = thisClassName+".indent";
-        String s = System.getProperty(prop);
-        if(s!=null && s.length()>0)
+        String sdrop = null, sindent = null;
+        try
+        {
+            String prop = thisClassName + ".indent";
+            sindent = System.getProperty(prop);
+            prop = thisClassName + ".drop";
+            sdrop = System.getProperty(prop);
+        }
+        catch (SecurityException e)
+        {
+            // PDFBOX-1946 when run in an applet
+            // ignore and use default
+        }
+        if (sindent != null && sindent.length() > 0)
         {
             try
             {
-                float f = Float.parseFloat(s);
+                float f = Float.parseFloat(sindent);
                 DEFAULT_INDENT_THRESHOLD = f;
             }
-            catch(NumberFormatException nfe)
+            catch (NumberFormatException nfe)
             {
-                        //ignore and use default
+                //ignore and use default
             }
         }
-        prop = thisClassName+".drop";
-        s = System.getProperty(prop);
-        if(s!=null && s.length()>0)
+        if (sdrop != null && sdrop.length() > 0)
         {
             try
             {
-                float f = Float.parseFloat(s);
+                float f = Float.parseFloat(sdrop);
                 DEFAULT_DROP_THRESHOLD = f;
             }
-            catch(NumberFormatException nfe)
+            catch (NumberFormatException nfe)
             {
                 //ignore and use default
             }
@@ -328,13 +338,9 @@ public class PDFTextStripper extends PDFStreamEngine
             {
                 document.decrypt("");
             }
-            catch (CryptographyException e)
-            {
-                throw new WrappedIOException("Error decrypting document, details: ", e);
-            }
             catch (InvalidPasswordException e)
             {
-                throw new WrappedIOException("Error: document is encrypted", e);
+                throw new IOException("Invalid password for encrypted document", e);
             }
         }
         processPages( document.getDocumentCatalog().getAllPages() );

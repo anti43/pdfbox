@@ -69,11 +69,7 @@ import org.apache.pdfbox.pdmodel.graphics.PDLineDashPattern;
 import org.apache.pdfbox.pdmodel.graphics.color.PDColor;
 import org.apache.pdfbox.pdmodel.graphics.color.PDColorSpace;
 import org.apache.pdfbox.pdmodel.graphics.pattern.PDTilingPattern;
-import org.apache.pdfbox.pdmodel.graphics.shading.AxialShadingPaint;
 import org.apache.pdfbox.pdmodel.graphics.shading.PDShading;
-import org.apache.pdfbox.pdmodel.graphics.shading.PDShadingType2;
-import org.apache.pdfbox.pdmodel.graphics.shading.PDShadingType3;
-import org.apache.pdfbox.pdmodel.graphics.shading.RadialShadingPaint;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotation;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAppearanceDictionary;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAppearanceStream;
@@ -81,7 +77,7 @@ import org.apache.pdfbox.pdmodel.graphics.state.PDTextState;
 import org.apache.pdfbox.util.Matrix;
 import org.apache.pdfbox.util.PDFStreamEngine;
 import org.apache.pdfbox.util.ResourceLoader;
-import org.apache.pdfbox.util.TextPosition;
+import org.apache.pdfbox.text.TextPosition;
 
 /**
  * This will paint a page in a PDF document to a graphics context.
@@ -820,41 +816,17 @@ public class PageDrawer extends PDFStreamEngine
 
     /**
      * Fill with Shading. Called by SHFill operator.
-     * 
+     *
      * @param shadingName The name of the Shading Dictionary to use for this fill instruction.
-     * 
+     *
      * @throws IOException If there is an IO error while shade-filling the clipping area.
      */
-    // TODO would this now be better off using PDPattern?
     public void shFill(COSName shadingName) throws IOException
     {
         PDShading shading = getResources().getShadings().get(shadingName.getName());
-        LOG.debug("Shading = " + shading.toString());
-        int shadingType = shading.getShadingType();
         Matrix ctm = getGraphicsState().getCurrentTransformationMatrix();
-        Paint paint = null;
-        switch (shadingType)
-        {
-        case 1:
-            // TODO
-            LOG.debug("Function based shading not yet supported");
-            break;
-        case 2:
-            paint = new AxialShadingPaint((PDShadingType2) shading, ctm, pageHeight);
-            break;
-        case 3:
-            paint = new RadialShadingPaint((PDShadingType3) shading, ctm, pageHeight);
-            break;
-        case 4:
-        case 5:
-        case 6:
-        case 7:
-            // TODO
-            LOG.debug("Shading type " + shadingType + " not yet supported");
-            break;
-        default:
-            throw new IOException("Invalid ShadingType " + shadingType + " for Shading " + shadingName);
-        }
+        Paint paint = shading.toPaint(ctm, pageHeight);
+
         graphics.setComposite(getGraphicsState().getNonStrokeJavaComposite());
         graphics.setPaint(paint);
 //        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);

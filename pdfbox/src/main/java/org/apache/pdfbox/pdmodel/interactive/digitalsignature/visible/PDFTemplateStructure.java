@@ -25,7 +25,6 @@ import java.util.List;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSDocument;
-import org.apache.pdfbox.exceptions.COSVisitorException;
 import org.apache.pdfbox.pdfwriter.COSWriter;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -41,10 +40,9 @@ import org.apache.pdfbox.pdmodel.interactive.form.PDField;
 import org.apache.pdfbox.pdmodel.interactive.form.PDSignatureField;
 
 /**
- * Structure of PDF document with visible signature
+ * Structure of PDF document with visible signature.
  * 
- * @author <a href="mailto:vakhtang.koroghlishvili@gmail.com"> vakhtang koroghlishvili (gogebashvili) </a>
- * 
+ * @author Vakhtang Koroghlishvili
  */
 public class PDFTemplateStructure
 {
@@ -117,7 +115,7 @@ public class PDFTemplateStructure
     }
 
     /**
-     * Gets Acroform
+     * Gets AcroForm
      * @return
      */
     public PDAcroForm getAcroForm()
@@ -126,7 +124,7 @@ public class PDFTemplateStructure
     }
 
     /**
-     * Sets Acroform
+     * Sets AcroForm
      * @param acroForm
      */
     public void setAcroForm(PDAcroForm acroForm)
@@ -153,7 +151,7 @@ public class PDFTemplateStructure
     }
 
     /**
-     * Gets PDSignature
+     * Gets PDSignatureField
      * @return
      */
     public PDSignature getPdSignature()
@@ -162,7 +160,7 @@ public class PDFTemplateStructure
     }
 
     /**
-     * Sets PDSignature
+     * Sets PDSignatureField
      * @param pdSignature
      */
     public void setPdSignature(PDSignature pdSignature)
@@ -574,9 +572,8 @@ public class PDFTemplateStructure
     * Gets AP of the created template
     * @return
     * @throws IOException
-    * @throws COSVisitorException
     */
-    public ByteArrayInputStream getTemplateAppearanceStream() throws IOException, COSVisitorException
+    public ByteArrayInputStream getTemplateAppearanceStream() throws IOException
     {
         COSDocument visualSignature = getVisualSignature();
         ByteArrayOutputStream memoryOut = new ByteArrayOutputStream();
@@ -611,5 +608,4 @@ public class PDFTemplateStructure
     {
         this.widgetDictionary = widgetDictionary;
     }
-
 }

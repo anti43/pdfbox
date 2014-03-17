@@ -28,7 +28,6 @@ import java.util.Map;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.pdfbox.exceptions.COSVisitorException;
 import org.apache.pdfbox.io.RandomAccess;
 import org.apache.pdfbox.io.RandomAccessBuffer;
 import org.apache.pdfbox.io.RandomAccessFile;
@@ -548,10 +547,10 @@ public class COSDocument extends COSBase implements Closeable
      *
      * @param visitor The object to notify when visiting this object.
      * @return any object, depending on the visitor implementation, or null
-     * @throws COSVisitorException If an error occurs while visiting this object.
+     * @throws IOException If an error occurs while visiting this object.
      */
     @Override
-    public Object accept(ICOSVisitor visitor) throws COSVisitorException
+    public Object accept(ICOSVisitor visitor) throws IOException
     {
         return visitor.visitFromDocument( this );
     }

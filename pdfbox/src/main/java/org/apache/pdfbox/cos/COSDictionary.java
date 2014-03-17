@@ -25,7 +25,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.pdfbox.exceptions.COSVisitorException;
 import org.apache.pdfbox.pdmodel.common.COSObjectable;
 import org.apache.pdfbox.util.DateConverter;
 
@@ -584,6 +583,47 @@ public class COSDictionary extends COSBase
             currentFlags &= ~bitFlag;
         }
         setInt(field, currentFlags);
+    }
+
+    /**
+     * This is a convenience method that will get the dictionary object that
+     * is expected to be a name. Null is returned if the entry does not exist in the dictionary.
+     *
+     * @param key The key to the item in the dictionary.
+     * @return The COS name.
+     */
+    public COSName getCOSName(COSName key)
+    {
+        COSBase name = getDictionaryObject( key );
+        if( name != null )
+        {
+            if ( name instanceof COSName )
+            {
+                return (COSName) name;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * This is a convenience method that will get the dictionary object that
+     * is expected to be a name. Default is returned if the entry does not exist in the dictionary.
+     *
+     * @param key The key to the item in the dictionary.
+     * @param defaultValue The value to return if the dictionary item is null.
+     * @return The COS name.
+     */
+    public COSName getCOSName(COSName key, COSName defaultValue)
+    {
+        COSBase name = getDictionaryObject( key );
+        if( name != null )
+        {
+            if ( name instanceof COSName )
+            {
+                return (COSName) name;
+            }
+        }
+        return defaultValue;
     }
 
 	/**
@@ -1371,9 +1411,9 @@ public class COSDictionary extends COSBase
 	 * @param visitor The object to notify when visiting this object.
 	 * @return The object that the visitor returns.
 	 *
-	 * @throws COSVisitorException If there is an error visiting this object.
+	 * @throws IOException If there is an error visiting this object.
 	 */
-	public Object accept(ICOSVisitor  visitor) throws COSVisitorException
+	public Object accept(ICOSVisitor  visitor) throws IOException
 	{
 		return visitor.visitFromDictionary(this);
 	}

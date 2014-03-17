@@ -16,8 +16,6 @@
  */
 package org.apache.pdfbox.cos;
 
-import org.apache.pdfbox.exceptions.COSVisitorException;
-
 import java.io.IOException;
 
 /**
@@ -199,9 +197,9 @@ public class COSObject extends COSBase
      *
      * @param visitor The object to notify when visiting this object.
      * @return any object, depending on the visitor implementation, or null
-     * @throws COSVisitorException If an error occurs while visiting this object.
+     * @throws IOException If an error occurs while visiting this object.
      */
-    public Object accept( ICOSVisitor visitor ) throws COSVisitorException
+    public Object accept( ICOSVisitor visitor ) throws IOException
     {
         return getObject() != null ? getObject().accept( visitor ) : COSNull.NULL.accept( visitor );
     }

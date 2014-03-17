@@ -22,8 +22,7 @@ import java.io.InputStream;
 /**
  * This builder class is in order to create visible signature properties.
  * 
- * @author <a href="mailto:vakhtang.koroghlishvili@gmail.com"> vakhtang koroghlishvili (gogebashvili) </a>
- * 
+ * @author Vakhtang Koroghlishvili
  */
 public class PDVisibleSigProperties
 {
@@ -39,8 +38,8 @@ public class PDVisibleSigProperties
 
     /**
      * start building of visible signature
-     * 
-     * @throws IOException
+     *
+     * @throws IOException if the output could not be written
      */
     public void buildSignature() throws IOException
     {
@@ -206,5 +205,4 @@ public class PDVisibleSigProperties
     {
         this.visibleSignature = visibleSignature;
     }
-
 }

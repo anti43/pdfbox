@@ -37,7 +37,6 @@ import org.apache.pdfbox.cos.COSNumber;
 import org.apache.pdfbox.cos.COSObject;
 import org.apache.pdfbox.cos.COSStream;
 import org.apache.pdfbox.cos.COSString;
-import org.apache.pdfbox.exceptions.WrappedIOException;
 import org.apache.pdfbox.io.IOUtils;
 import org.apache.pdfbox.io.PushBackInputStream;
 import org.apache.pdfbox.io.RandomAccess;
@@ -166,8 +165,19 @@ public abstract class BaseParser
     public BaseParser(InputStream input, boolean forceParsingValue)
             throws IOException
     {
+        int pushbacksize = 65536;
+        try
+        {
+            pushbacksize = Integer.getInteger(PROP_PUSHBACK_SIZE, 65536);
+        }
+        catch (SecurityException e) 
+        {
+            // PDFBOX-1946 getInteger calls System.getProperties, 
+            // which can get exception in an applet
+            // ignore and use default
+        }
         this.pdfSource = new PushBackInputStream(
-                new BufferedInputStream(input, 16384),  Integer.getInteger( PROP_PUSHBACK_SIZE, 65536 ) );
+                new BufferedInputStream(input, 16384), pushbacksize);
         this.forceParsing = forceParsingValue;
     }
 
@@ -552,10 +562,10 @@ public abstract class BaseParser
                         }
                         catch ( IOException ioe )
                         {
-                            throw new WrappedIOException( "Could not push back " + bout.size() + 
-                                                          " bytes in order to reparse stream. " +
-                                                          "Try increasing push back buffer using system property " +
-                                                          PROP_PUSHBACK_SIZE, ioe );
+                            throw new IOException( "Could not push back " + bout.size() +
+                                                   " bytes in order to reparse stream. " +
+                                                   "Try increasing push back buffer using system property " +
+                                                   PROP_PUSHBACK_SIZE, ioe );
                         }
                         // close and create new filtered stream
                       	IOUtils.closeQuietly(out);

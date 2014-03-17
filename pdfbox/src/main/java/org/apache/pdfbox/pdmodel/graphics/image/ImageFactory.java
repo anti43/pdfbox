@@ -56,7 +56,7 @@ class ImageFactory
     // returns a PDColorSpace for a given AWT ColorSpace
     protected static PDColorSpace toPDColorSpace(ColorSpace awtColorSpace)
     {
-        if (awtColorSpace instanceof ICC_ColorSpace)
+        if (awtColorSpace instanceof ICC_ColorSpace && !awtColorSpace.isCS_sRGB())
         {
             throw new UnsupportedOperationException("ICC color spaces not implemented");
         }
@@ -108,6 +108,7 @@ class ImageFactory
         Graphics2D g = rgbImage.createGraphics();
         g.setComposite(AlphaComposite.Src);
         g.drawImage(image, 0, 0, null);
+        g.dispose();
 
         return rgbImage;
     }

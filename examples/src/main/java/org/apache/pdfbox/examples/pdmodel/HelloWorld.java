@@ -18,8 +18,6 @@ package org.apache.pdfbox.examples.pdmodel;
 
 import java.io.IOException;
 
-import org.apache.pdfbox.exceptions.COSVisitorException;
-
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 
@@ -27,7 +25,6 @@ import org.apache.pdfbox.pdmodel.edit.PDPageContentStream;
 
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
-
 
 /**
  * This is an example that creates a simple document.
@@ -54,9 +51,8 @@ public class HelloWorld
      * @param message The message to write in the file.
      *
      * @throws IOException If there is an error writing the data.
-     * @throws COSVisitorException If there is an error writing the PDF.
      */
-    public void doIt( String file, String message) throws IOException, COSVisitorException
+    public void doIt( String file, String message) throws IOException
     {
         // the document
         PDDocument doc = null;
