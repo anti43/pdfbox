@@ -151,6 +151,11 @@ public final class PDImageXObject extends PDXObject implements PDImage
         getCOSStream().setInt(COSName.STRUCT_PARENT, key);
     }
 
+    public void flushCache()
+    {
+       cachedImage=null;
+    }
+
     /**
      * {@inheritDoc}
      * The returned images are cached for the lifetime of this XObject.
