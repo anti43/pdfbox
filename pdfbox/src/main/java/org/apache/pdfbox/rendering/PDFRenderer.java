@@ -187,20 +187,23 @@ public class PDFRenderer
         graphics.scale(scaleX, scaleY);
         // TODO should we be passing the scale to PageDrawer rather than messing with Graphics?
 
+        PDRectangle cropBox = page.findCropBox();
         int rotationAngle = page.findRotation();
         if (rotationAngle != 0)
         {
-            int translateX = 0;
-            int translateY = 0;
+            float translateX = 0;
+            float translateY = 0;
             switch (rotationAngle)
             {
                 case 90:
+                    translateX = cropBox.getHeight();
+                    break;
                 case 270:
-                    translateX = height;
+                    translateY = cropBox.getWidth();
                     break;
                 case 180:
-                    translateX = width;
-                    translateY = height;
+                    translateX = cropBox.getWidth();
+                    translateY = cropBox.getHeight();
                     break;
             }
             graphics.translate(translateX, translateY);
@@ -208,7 +211,7 @@ public class PDFRenderer
         }
 
         PageDrawer drawer = new PageDrawer(this);   // TODO: need to make it easy to use a custom PageDrawer
-        drawer.drawPage(graphics, page, page.findCropBox());
+        drawer.drawPage(graphics, page, cropBox);
         drawer.dispose();
     }
 }
