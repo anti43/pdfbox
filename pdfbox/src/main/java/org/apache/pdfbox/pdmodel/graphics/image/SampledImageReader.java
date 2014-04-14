@@ -137,7 +137,7 @@ final class SampledImageReader
         final int height = pdImage.getHeight();
         final int bitsPerComponent = pdImage.getBitsPerComponent();
         final float[] decode = getDecodeArray(pdImage);
-        
+
 
         //
         // An AWT raster must use 8/16/32 bits per component. Images with < 8bpc
@@ -253,10 +253,11 @@ final class SampledImageReader
               }
 
               ColorModel colorModel = new ComponentColorModel(ColorSpace.getInstance(ColorSpace.CS_GRAY), false, false, Transparency.OPAQUE, DataBuffer.TYPE_BYTE);
-              BufferedImage src = new BufferedImage(colorModel, raster, false, null);
+              //BufferedImage src = new BufferedImage(colorModel, raster, false, null);
+              BufferedImage src = colorSpace.toRGBImage(raster);
               return src;
            }
-           
+
            //original code
             // init color key mask
             float[] colorKeyRanges = null;
@@ -276,7 +277,7 @@ final class SampledImageReader
 
             // read stream
 
-            
+
             ////////////OLD///////////////
             for (int y = 0; y < height; y++)
             {
@@ -330,9 +331,9 @@ final class SampledImageReader
                 // rows are padded to the nearest byte
                 iis.readBits(padding);
             }
-            
-            
-            
+
+
+
             /////////////////////////////////////7
 
             // use the color space to convert the image to RGB
