@@ -141,7 +141,8 @@ final class SampledImageReader
         final float[] decode = getDecodeArray(pdImage);
 
 
-        if (numComponents == 1 && bitsPerComponent == 1 && colorSpace instanceof DirectBiTonalImageProducer) {
+        if (numComponents == 1 && bitsPerComponent == 1 && colorSpace instanceof DirectBiTonalImageProducer)
+        {
             return from1bit(pdImage,colorSpace,width,height,decode[0],decode[1]);
         }
 
