@@ -245,37 +245,13 @@ final class SampledImageReader
         ImageInputStream iis = null;
         try
         {
-          // create stream
-           iis = new MemoryCacheImageInputStream(pdImage.getStream().createInputStream());
-           final float sampleMax = (float)Math.pow(2, bitsPerComponent) - 1f;
-           final boolean isIndexed = colorSpace instanceof PDIndexed;
-           byte[] srcColorValues = new byte[numComponents];
-           byte[] alpha = new byte[1];
+            // create stream
+            iis = new MemoryCacheImageInputStream(pdImage.getStream().createInputStream());
+            final float sampleMax = (float)Math.pow(2, bitsPerComponent) - 1f;
+            final boolean isIndexed = colorSpace instanceof PDIndexed;
+            byte[] srcColorValues = new byte[numComponents];
+            byte[] alpha = new byte[1];
 
-           //on 1bit images, skip the color conversion..
-           if (numComponents == 1 && bitsPerComponent == 1 && colorSpace instanceof DirectBiTonalImageProducer) {
-              int rowlen = (width + 7) / 8;
-              byte[] buff = new byte[rowlen * height];
-              iis.readFully(buff);
-
-              // get pixel on/off values (takeover from original method)
-              final float dMin = decode[0];
-              final float dMax = decode[1];
-              final float minVal = dMin + (0f * ((dMax - dMin) / sampleMax));
-              final float maxVal = dMin + (1f * ((dMax - dMin) / sampleMax));
-              final byte pxon,pxoff;
-              if (isIndexed) {
-                 pxoff=(byte)Math.round(minVal);
-                 pxon=(byte)Math.round(maxVal);
-              } else {
-                 pxoff=(byte) Math.round(((minVal - Math.min(dMin, dMax)) / Math.abs(dMax - dMin)) * 255f);
-                 pxon=(byte) Math.round(((maxVal - Math.min(dMin, dMax)) / Math.abs(dMax - dMin)) * 255f);
-              }
-
-              return ((DirectBiTonalImageProducer)colorSpace).toRGBImage(buff,width,height,pxoff,pxon);
-           }
-
-           //original code
             // init color key mask
             float[] colorKeyRanges = null;
             BufferedImage colorKeyMask = null;
