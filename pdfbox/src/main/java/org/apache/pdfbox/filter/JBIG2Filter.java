@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.SequenceInputStream;
+import java.lang.reflect.Method;
 import java.util.Iterator;
 
 import javax.imageio.ImageIO;
@@ -88,8 +89,25 @@ final class JBIG2Filter extends Filter
         {
             if (globals != null)
             {
-                iis = ImageIO.createImageInputStream(
-                        new SequenceInputStream(globals.getUnfilteredStream(), encoded));
+                // looks complicated, but we may not have a compile time dependency upon that library.
+                if (reader.getClass().getName().equals("com.levigo.jbig2.JBIG2ImageReader")) {
+                    try {
+                        iis=ImageIO.createImageInputStream(globals.getUnfilteredStream());
+                        // get participants by reflection
+                        Method _processGlobals=reader.getClass().getMethod("processGlobals",ImageInputStream.class);
+                        Class _JBIG2Globals=Class.forName("com.levigo.jbig2.JBIG2Globals");
+                        Method _setGlobals=reader.getClass().getMethod("setGlobals",_JBIG2Globals);
+                        // let's call it now...
+                        // reader.setGlobals(jb2reader.processGlobals(iis));
+                        _setGlobals.invoke(reader, _processGlobals.invoke(reader,iis));
+                        iis=ImageIO.createImageInputStream(encoded);
+                    } catch (Exception e) {
+                        throw new IOException("Something changed in levigo library...");
+                    }
+                } else {
+                    iis = ImageIO.createImageInputStream(
+                            new SequenceInputStream(globals.getUnfilteredStream(), encoded));
+                }
                 reader.setInput(iis);
             }
             else
