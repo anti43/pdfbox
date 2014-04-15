@@ -35,11 +35,11 @@ import org.apache.pdfbox.pdmodel.common.PDStream;
 /**
  * An Indexed colour space specifies that an area is to be painted using a colour table
  * of arbitrary colours from another color space.
- * 
+ *
  * @author John Hewson
  * @author Ben Litchfield
  */
-public final class PDIndexed extends PDSpecialColorSpace
+public final class PDIndexed extends PDSpecialColorSpace implements DirectBiTonalImageProducer
 {
     private static final PDColor INITIAL_COLOR = new PDColor(new float[] { 0 });
 
@@ -186,6 +186,19 @@ public final class PDIndexed extends PDSpecialColorSpace
 
         return rgbImage;
     }
+
+    public BufferedImage toRGBImage(byte[] bitplane, int width, int height, byte value0, byte value1) {
+        int col0=getRGBColor((int)value0);
+        int col1=getRGBColor((int)value1);
+        return PDDeviceGray.toRGBImage(bitplane,width,height,col0,col1);
+    }
+
+    private int getRGBColor(int index) {
+        index=Math.min(index,actualMaxIndex);
+        int[] rgb=rgbColorTable[index];
+        return ((rgb[0] & 0xff) <<8 | (rgb[1] & 0xff)) <<8 | (rgb[2] & 0xff);
+    }
+
 
     /**
      * Returns the base color space.

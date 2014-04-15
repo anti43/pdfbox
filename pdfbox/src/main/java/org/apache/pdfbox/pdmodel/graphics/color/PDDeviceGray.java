@@ -19,6 +19,7 @@ package org.apache.pdfbox.pdmodel.graphics.color;
 import org.apache.pdfbox.cos.COSName;
 
 import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferInt;
 import java.awt.image.WritableRaster;
 import java.io.IOException;
 
@@ -28,7 +29,7 @@ import java.io.IOException;
  * @author Ben Litchfield
  * @author John Hewson
  */
-public final class PDDeviceGray extends PDDeviceColorSpace
+public final class PDDeviceGray extends PDDeviceColorSpace implements DirectBiTonalImageProducer
 {
     /** The single instance of this class. */
     public static final PDDeviceGray INSTANCE = new PDDeviceGray();
@@ -92,4 +93,32 @@ public final class PDDeviceGray extends PDDeviceColorSpace
 
         return image;
     }
+
+    // create a buffered image from bitplane data with given width, height and values for set (value1) and unset (value0) bits.
+    public BufferedImage toRGBImage(byte[] bitplane, int width, int height, byte value0, byte value1) {
+        int pxoff=((value0<<8 | value0)<<8 | value0);
+        int pxon=((value1<<8 | value1)<<8 | value1);
+        return toRGBImage(bitplane,width,height,pxoff,pxon);
+    }
+
+    // static, is used by PDIndexed, too.
+    public static BufferedImage toRGBImage(byte[] bitplane, int width, int height, int value0, int value1) {
+        // create buffered image and get the databuffer int[]
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        int[] bank=((DataBufferInt) image.getRaster().getDataBuffer()).getData();
+        // precalc pixel on/off values
+        int rowlen = (width + 7) / 8;
+        int roffbits=0;
+        int roffbank=0;
+        int[] bitmasks=new int[]{ 128,64,32,16,8,4,2,1 };
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                bank[roffbank + x]=(bitplane[roffbits + (x >> 3)] & bitmasks[x & 7]) > 0 ? value1:value0;
+            }
+            roffbits+=rowlen;
+            roffbank+=width;
+        }
+        return image;
+    }
+
 }

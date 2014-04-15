@@ -39,7 +39,9 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.io.IOUtils;
 import org.apache.pdfbox.pdmodel.graphics.color.PDColorSpace;
+import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceGray;
 import org.apache.pdfbox.pdmodel.graphics.color.PDIndexed;
+import org.apache.pdfbox.pdmodel.graphics.color.DirectBiTonalImageProducer;
 
 import javax.imageio.stream.ImageInputStream;
 import javax.imageio.stream.MemoryCacheImageInputStream;
@@ -139,6 +141,10 @@ final class SampledImageReader
         final float[] decode = getDecodeArray(pdImage);
 
 
+        if (numComponents == 1 && bitsPerComponent == 1 && colorSpace instanceof DirectBiTonalImageProducer) {
+            return from1bit(pdImage,colorSpace,width,height,decode[0],decode[1]);
+        }
+
         //
         // An AWT raster must use 8/16/32 bits per component. Images with < 8bpc
         // will be unpacked into a byte-backed raster. Images with 16bpc will be reduced
@@ -158,6 +164,35 @@ final class SampledImageReader
         {
             return fromAny(pdImage, raster, colorKey);
         }
+    }
+
+    // faster, 1-bit image conversion
+    private static BufferedImage from1bit(PDImage pdImage, PDColorSpace colorSpace, int width, int height, float dMin, float dMax)
+            throws IOException
+    {
+        InputStream input = pdImage.getStream().createInputStream();
+        try
+        {
+            final int rowlen = (width + 7) / 8;
+            final byte[] buff = IOUtils.toByteArray(input);
+            final byte pxon,pxoff;
+            if (colorSpace instanceof PDIndexed)
+            {
+                pxoff=(byte)Math.round(dMin);
+                pxon=(byte)Math.round(dMax);
+            }
+            else
+            {
+                pxoff=(byte) Math.round(((dMin - Math.min(dMin, dMax)) / Math.abs(dMax - dMin)) * 255f);
+                pxon=(byte) Math.round(((dMax - Math.min(dMin, dMax)) / Math.abs(dMax - dMin)) * 255f);
+            }
+            return ((DirectBiTonalImageProducer)colorSpace).toRGBImage(buff,width,height,pxoff,pxon);
+        }
+        finally
+        {
+            IOUtils.closeQuietly(input);
+        }
+
     }
 
     // faster, 8-bit non-decoded, non-colormasked image conversion
@@ -218,44 +253,26 @@ final class SampledImageReader
            byte[] alpha = new byte[1];
 
            //on 1bit images, skip the color conversion..
-           if (numComponents == 1 && bitsPerComponent == 1) {
+           if (numComponents == 1 && bitsPerComponent == 1 && colorSpace instanceof DirectBiTonalImageProducer) {
               int rowlen = (width + 7) / 8;
               byte[] buff = new byte[rowlen * height];
               iis.readFully(buff);
 
-              for (int y = 0; y < height; y++) {
-                 for (int x = 0; x < width; x++) {
-                    //boolean isMasked = true;
-                    int boff = x >> 3;
-                    int bitmask = 1 << (7 - (x & 7));
-                    int value = (buff[y * rowlen + boff] & bitmask) > 0 ? 1 : 0;
-
-                    // decode array
-                    final float dMin = decode[0];
-                    final float dMax = decode[1];
-
-                    // interpolate to domain
-                    float output = dMin + (value * ((dMax - dMin) / sampleMax));
-
-                    if (isIndexed) {
-                       // indexed color spaces get the raw value, because the TYPE_BYTE
-                       // below cannot be reversed by the color space without it having
-                       // knowledge of the number of bits per component
-                       srcColorValues[0] = (byte) Math.round(output);
-                    } else {
-                       // interpolate to TYPE_BYTE
-                       int outputByte = Math.round(((output - Math.min(dMin, dMax))
-                               / Math.abs(dMax - dMin)) * 255f);
-                       srcColorValues[0] = (byte) outputByte;
-                    }
-                    raster.setDataElements(x, y, srcColorValues);
-                 }
+              // get pixel on/off values (takeover from original method)
+              final float dMin = decode[0];
+              final float dMax = decode[1];
+              final float minVal = dMin + (0f * ((dMax - dMin) / sampleMax));
+              final float maxVal = dMin + (1f * ((dMax - dMin) / sampleMax));
+              final byte pxon,pxoff;
+              if (isIndexed) {
+                 pxoff=(byte)Math.round(minVal);
+                 pxon=(byte)Math.round(maxVal);
+              } else {
+                 pxoff=(byte) Math.round(((minVal - Math.min(dMin, dMax)) / Math.abs(dMax - dMin)) * 255f);
+                 pxon=(byte) Math.round(((maxVal - Math.min(dMin, dMax)) / Math.abs(dMax - dMin)) * 255f);
               }
 
-              ColorModel colorModel = new ComponentColorModel(ColorSpace.getInstance(ColorSpace.CS_GRAY), false, false, Transparency.OPAQUE, DataBuffer.TYPE_BYTE);
-              //BufferedImage src = new BufferedImage(colorModel, raster, false, null);
-              BufferedImage src = colorSpace.toRGBImage(raster);
-              return src;
+              return ((DirectBiTonalImageProducer)colorSpace).toRGBImage(buff,width,height,pxoff,pxon);
            }
 
            //original code
