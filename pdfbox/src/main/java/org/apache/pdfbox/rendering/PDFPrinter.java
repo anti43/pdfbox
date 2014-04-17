@@ -227,33 +227,30 @@ public class PDFPrinter
             PageFormat format = printerJob.defaultPage();
             PDPage page = document.getPage(pageIndex);
 
-            // auto portrait/landscape
-            if (orientation == Orientation.AUTO)
+            Dimension media = page.findMediaBox().createDimension();
+            Dimension crop = page.findCropBox().createDimension();
+
+            // Center the ImageableArea if the crop is smaller than the media
+            double diffWidth = 0.0;
+            double diffHeight = 0.0;
+            if (!media.equals(crop))
             {
-                Dimension cropBox = page.findRotatedCropBox().createDimension();
-                if (cropBox.getWidth() > cropBox.getHeight())
-                {
-                    format.setOrientation(PageFormat.LANDSCAPE);
-                }
-                else
-                {
-                    format.setOrientation(PageFormat.PORTRAIT);
-                }
-            }
-            else if (orientation == Orientation.LANDSCAPE)
-            {
-                format.setOrientation(PageFormat.LANDSCAPE);
-            }
-            else if (orientation == Orientation.PORTRAIT)
-            {
-                format.setOrientation(PageFormat.PORTRAIT);
+                diffWidth = (media.getWidth() - crop.getWidth()) / 2.0;
+                diffHeight = (media.getHeight() - crop.getHeight()) / 2.0;
             }
 
-            // custom paper
-            if (paper != null)
+            Paper fpaper=paper!=null?paper:format.getPaper();
+            if (media.getWidth() < media.getHeight())
             {
-                format.setPaper(paper);
+                format.setOrientation(PageFormat.PORTRAIT);
+                fpaper.setImageableArea(diffWidth, diffHeight, crop.getWidth(), crop.getHeight());
             }
+            else
+            {
+                format.setOrientation(PageFormat.LANDSCAPE);
+                fpaper.setImageableArea(diffHeight, diffWidth, crop.getHeight(), crop.getWidth());
+            }
+            format.setPaper(fpaper);
 
             return format;
         }
