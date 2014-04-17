@@ -286,6 +286,8 @@ public class PDFPrinter
                 PDPage page = document.getPage(pageIndex);
                 PDRectangle cropBox = page.findRotatedCropBox();
 
+                System.out.println("rotatedCropBox="+cropBox+", mediabox="+page.findMediaBox());
+
                 // the imageable area is the area within the page margins
                 final double imageableWidth = pageFormat.getImageableWidth();
                 final double imageableHeight = pageFormat.getImageableHeight();
