@@ -24,7 +24,10 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Image;
 import java.awt.Paint;
+import java.awt.Rectangle;
 import java.awt.RenderingHints;
+import java.awt.TexturePaint;
+import java.awt.Transparency;
 import java.awt.font.FontRenderContext;
 import java.awt.font.GlyphVector;
 import java.awt.geom.AffineTransform;
@@ -32,11 +35,16 @@ import java.awt.geom.Area;
 import java.awt.geom.GeneralPath;
 import java.awt.geom.NoninvertibleTransformException;
 import java.awt.geom.Point2D;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+
+import com.mortennobel.imagescaling.ResampleFilters;
+import com.mortennobel.imagescaling.ResampleOp;
+import com.mortennobel.imagescaling.AdvancedResizeOp;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -81,14 +89,15 @@ import org.apache.pdfbox.text.TextPosition;
 
 /**
  * This will paint a page in a PDF document to a graphics context.
- * 
+ *
  * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * 
+ *
  */
 public class PageDrawer extends PDFStreamEngine
 {
     private static final Log LOG = LogFactory.getLog(PageDrawer.class);
     private static final Color COLOR_TRANSPARENT = new Color(0, 0, 0, 0);
+    private static int currentFilter=0;
 
     // parent document renderer
     private final PDFRenderer renderer;
@@ -104,10 +113,12 @@ public class PageDrawer extends PDFStreamEngine
     private Map<PDFont, Font> awtFonts = new HashMap<PDFont, Font>();
 
     private int pageHeight;
-    
+
+    private boolean highQuality = false;
+
     /**
      * Default constructor, loads properties from file.
-     * 
+     *
      * @throws IOException If there is an error loading properties from the file.
      */
     public PageDrawer(PDFRenderer renderer) throws IOException
@@ -136,11 +147,11 @@ public class PageDrawer extends PDFStreamEngine
 
     /**
      * This will draw the page to the requested context.
-     * 
+     *
      * @param g The graphics context to draw onto.
      * @param page The page to draw.
      * @param pageSize The size of the page to draw.
-     * 
+     *
      * @throws IOException If there is an IO error while drawing the page.
      */
     public void drawPage(Graphics g, PDPage page, PDRectangle pageSize) throws IOException
@@ -260,7 +271,7 @@ public class PageDrawer extends PDFStreamEngine
 
     /**
      * You should override this method if you want to perform an action when a text is being processed.
-     * 
+     *
      * @param text The text to process
      */
     protected void processTextPosition(TextPosition text)
@@ -339,7 +350,7 @@ public class PageDrawer extends PDFStreamEngine
 
     /**
      * Render the font using the Glyph2d interface.
-     * 
+     *
      * @param glyph2D the Glyph2D implementation provided a GeneralPath for each glyph
      * @param codePoints the string to be rendered
      * @param at the transformation
@@ -380,11 +391,11 @@ public class PageDrawer extends PDFStreamEngine
 
     /**
      * Render the text using a type 3 font.
-     * 
+     *
      * @param font the type3 font
      * @param text the text to be rendered
      * @param at the transformation
-     * 
+     *
      * @throws IOException if something went wrong
      */
     private void drawType3String(PDType3Font font, TextPosition text, AffineTransform at) throws IOException
@@ -452,7 +463,7 @@ public class PageDrawer extends PDFStreamEngine
 
     /**
      * Provides an AWT font for the given PDFont.
-     * 
+     *
      * @param font the font which needs an AWT font
      * @return the corresponding AWT font
      * @throws IOException if something went wrong
@@ -520,7 +531,7 @@ public class PageDrawer extends PDFStreamEngine
 
     /**
      * Provide a Glyph2D for the given font.
-     * 
+     *
      * @param font the font
      * @return the implementation of the Glyph2D interface for the given font
      * @throws IOException if something went wrong
@@ -610,7 +621,7 @@ public class PageDrawer extends PDFStreamEngine
 
     /**
      * Get the current line path to be drawn.
-     * 
+     *
      * @return The current line path to be drawn.
      */
     public GeneralPath getLinePath()
@@ -670,7 +681,7 @@ public class PageDrawer extends PDFStreamEngine
 
     /**
      * Stroke the path.
-     * 
+     *
      * @throws IOException If there is an IO error while stroking the path.
      */
     public void strokePath() throws IOException
@@ -766,9 +777,9 @@ public class PageDrawer extends PDFStreamEngine
 
     /**
      * Set the clipping winding rule.
-     * 
+     *
      * @param windingRule The winding rule which will be used for clipping.
-     * 
+     *
      */
     public void setClippingWindingRule(int windingRule)
     {
@@ -777,7 +788,7 @@ public class PageDrawer extends PDFStreamEngine
 
     /**
      * Set the clipping Path.
-     * 
+     *
      */
     public void endPath()
     {
@@ -806,21 +817,59 @@ public class PageDrawer extends PDFStreamEngine
     /**
      * Draw the AWT image. Called by Invoke. Moved into PageDrawer so that Invoke doesn't have to reach in here for
      * Graphics as that breaks extensibility.
-     * 
+     *
      * @param awtImage The image to draw.
      * @param at The transformation to use when drawing.
-     * 
+     *
      */
-    public void drawImage(Image awtImage, AffineTransform at)
+    public void drawImage(Image image, AffineTransform at)
     {
         graphics.setComposite(getGraphicsState().getNonStrokeJavaComposite());
         graphics.setClip(getGraphicsState().getCurrentClippingPath());
-        int width = awtImage.getWidth(null);
-        int height = awtImage.getHeight(null);
+        int width = image.getWidth(null);
+        int height = image.getHeight(null);
+
         AffineTransform imageTransform = new AffineTransform(at);
         imageTransform.scale(1.0 / width, -1.0 / height);
         imageTransform.translate(0, -height);
-        graphics.drawImage(awtImage, imageTransform, null);
+
+        // Scaling an image directly over factors of 2x created crappy results,
+        // but using java-image-scaling all the times slows down quite a bit.
+        // So it's used only if the highQuality property in Pagedrawer is set.
+        if (image instanceof BufferedImage /*&& highQuality*/)
+        {
+            AffineTransform result=new AffineTransform(graphics.getTransform());
+            result.concatenate(imageTransform);
+            result.concatenate( graphics.getDeviceConfiguration().getNormalizingTransform() );
+            int targetWidth=(int)(width*result.getScaleX());
+            int targetHeight=(int)(height*result.getScaleY());
+            if (targetWidth>=3 && targetHeight>=3)
+            {
+                ResampleOp  resampleOp = new ResampleOp(targetWidth,targetHeight);
+                if (highQuality)
+                {
+                   resampleOp.setUnsharpenMask(AdvancedResizeOp.UnsharpenMask.Normal);
+                   resampleOp.setFilter(ResampleFilters.getLanczos3Filter());
+                }
+                else
+                {
+                   // cubic hf provides good compromise between sharpness and speed
+                   resampleOp.setFilter(ResampleFilters.getBiCubicHighFreqResponse());
+                   // triangle is slightly fuzzier, similar speed
+                   // resampleOp.setFilter(ResampleFilters.getTriangleFilter());
+                }
+
+                image = resampleOp.filter((BufferedImage)image, null);
+                width=targetWidth;
+                height=targetHeight;
+
+                imageTransform = new AffineTransform(at);
+                imageTransform.scale(1.0 / targetWidth, -1.0 / targetHeight);
+                imageTransform.translate(0, -targetHeight);
+            }
+        }
+
+        graphics.drawImage(image, imageTransform, null);
     }
 
     /**
