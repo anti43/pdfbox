@@ -38,7 +38,8 @@
   <inceptionYear>2002</inceptionYear>
 
   <properties>
-    <lucene.version>4.7.1</lucene.version>
+    <lucene.version>4.7.2</lucene.version>
+    <!-- don't update this, because later versions require JDK7 -->
   </properties>
 
   <dependencies>
@@ -50,6 +51,11 @@
     <dependency>
         <groupId>${project.groupId}</groupId>
         <artifactId>pdfbox-tools</artifactId>
+        <version>${project.version}</version>
+    </dependency>
+    <dependency>
+		<groupId>org.apache.pdfbox</groupId>
+        <artifactId>jempbox</artifactId>
         <version>${project.version}</version>
     </dependency>
     <dependency>

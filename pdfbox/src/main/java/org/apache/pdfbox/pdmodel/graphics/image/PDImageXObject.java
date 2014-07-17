@@ -36,6 +36,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 /**
  * An Image XObject.
@@ -45,6 +47,11 @@ import java.util.Map;
  */
 public final class PDImageXObject extends PDXObject implements PDImage
 {
+    /**
+     * Log instance.
+     */
+    private static final Log LOG = LogFactory.getLog(PDImageXObject.class);
+
     private BufferedImage cachedImage;
     private PDColorSpace colorSpace;
     private Map<String, PDColorSpace> colorSpaces;  // from current resource dictionary
@@ -65,6 +72,7 @@ public final class PDImageXObject extends PDXObject implements PDImage
     /**
      * Creates an Image XObject in the given document.
      * @param document the current document
+     * @throws java.io.IOException if there is an error creating the XObject.
      */
     public PDImageXObject(PDDocument document) throws IOException
     {
@@ -75,19 +83,32 @@ public final class PDImageXObject extends PDXObject implements PDImage
      * Creates an Image XObject in the given document using the given filtered stream.
      * @param document the current document
      * @param filteredStream a filtered stream of image data
-     * @throws IOException
+     * @param cosFilter the filter or a COSArray of filters
+     * @param width the image width
+     * @param height the image height
+     * @param bitsPerComponent the bits per component
+     * @param initColorSpace the color space
+     * @throws IOException if there is an error creating the XObject.
      */
-    public PDImageXObject(PDDocument document, InputStream filteredStream) throws IOException
+    public PDImageXObject(PDDocument document, InputStream filteredStream, 
+            COSBase cosFilter, int width, int height, int bitsPerComponent, 
+            PDColorSpace initColorSpace) throws IOException
     {
         super(new PDStream(document, filteredStream, true), COSName.IMAGE);
+        getCOSStream().setItem(COSName.FILTER, cosFilter);
         colorSpaces = null;
         colorSpace = null;
+        setBitsPerComponent(bitsPerComponent);
+        setWidth(width);
+        setHeight(height);
+        setColorSpace(initColorSpace);
     }
 
     /**
      * Creates an Image XObject with the given stream as its contents and current color spaces.
      * @param stream the XObject stream to read
      * @param colorSpaces the color spaces in the current resources dictionary, null for masks
+     * @throws java.io.IOException if there is an error creating the XObject.
      */
     public PDImageXObject(PDStream stream, Map<String, PDColorSpace> colorSpaces) throws IOException
     {
@@ -151,15 +172,11 @@ public final class PDImageXObject extends PDXObject implements PDImage
         getCOSStream().setInt(COSName.STRUCT_PARENT, key);
     }
 
-    public void flushCache()
-    {
-       cachedImage=null;
-    }
-
     /**
      * {@inheritDoc}
      * The returned images are cached for the lifetime of this XObject.
      */
+    @Override
     public BufferedImage getImage() throws IOException
     {
         if (cachedImage != null)
@@ -168,7 +185,7 @@ public final class PDImageXObject extends PDXObject implements PDImage
         }
 
         // get image as RGB
-        BufferedImage image = SampledImageReader.getRGBImage(this,  getColorKeyMask());
+        BufferedImage image = SampledImageReader.getRGBImage(this, getColorKeyMask());
 
         // soft mask (overrides explicit mask)
         PDImageXObject softMask = getSoftMask();
@@ -194,6 +211,7 @@ public final class PDImageXObject extends PDXObject implements PDImage
      * {@inheritDoc}
      * The returned images are not cached.
      */
+    @Override
     public BufferedImage getStencilImage(Paint paint) throws IOException
     {
         if (!isStencil())
@@ -246,6 +264,7 @@ public final class PDImageXObject extends PDXObject implements PDImage
 
         float[] rgb = new float[3];
         float[] rgba = new float[4];
+        float[] alphaPixel = null;
         for (int y = 0; y < height; y++)
         {
             for (int x = 0; x < width; x++)
@@ -255,14 +274,15 @@ public final class PDImageXObject extends PDXObject implements PDImage
                 rgba[0] = rgb[0];
                 rgba[1] = rgb[1];
                 rgba[2] = rgb[2];
-
+                
+                alphaPixel = alpha.getPixel(x, y, alphaPixel);
                 if (isSoft)
                 {
-                    rgba[3] = alpha.getPixel(x, y, (float[])null)[0];
+                    rgba[3] = alphaPixel[0];
                 }
                 else
                 {
-                    rgba[3] = 255 - alpha.getPixel(x, y, (float[])null)[0];
+                    rgba[3] = 255 - alphaPixel[0];
                 }
 
                 dest.setPixel(x, y, rgba);
@@ -323,6 +343,7 @@ public final class PDImageXObject extends PDXObject implements PDImage
         return null;
     }
 
+    @Override
     public int getBitsPerComponent()
     {
         if (isStencil())
@@ -335,11 +356,13 @@ public final class PDImageXObject extends PDXObject implements PDImage
         }
     }
 
+    @Override
     public void setBitsPerComponent(int bpc)
     {
         getCOSStream().setInt(COSName.BITS_PER_COMPONENT, bpc);
     }
 
+    @Override
     public PDColorSpace getColorSpace() throws IOException
     {
         if (colorSpace == null)
@@ -363,41 +386,49 @@ public final class PDImageXObject extends PDXObject implements PDImage
         return colorSpace;
     }
 
+    @Override
     public PDStream getStream() throws IOException
     {
         return getPDStream();
     }
 
+    @Override
     public void setColorSpace(PDColorSpace cs)
     {
         getCOSStream().setItem(COSName.COLORSPACE, cs != null ? cs.getCOSObject() : null);
     }
 
+    @Override
     public int getHeight()
     {
         return getCOSStream().getInt(COSName.HEIGHT);
     }
 
+    @Override
     public void setHeight(int h)
     {
         getCOSStream().setInt(COSName.HEIGHT, h);
     }
 
+    @Override
     public int getWidth()
     {
         return getCOSStream().getInt(COSName.WIDTH);
     }
 
+    @Override
     public void setWidth(int w)
     {
         getCOSStream().setInt(COSName.WIDTH, w);
     }
 
+    @Override
     public void setDecode(COSArray decode)
     {
         getCOSStream().setItem(COSName.DECODE, decode);
     }
 
+    @Override
     public COSArray getDecode()
     {
         COSBase decode = getCOSStream().getDictionaryObject(COSName.DECODE);
@@ -408,11 +439,13 @@ public final class PDImageXObject extends PDXObject implements PDImage
         return null;
     }
 
+    @Override
     public boolean isStencil()
     {
         return getCOSStream().getBoolean(COSName.IMAGE_MASK, false);
     }
 
+    @Override
     public void setStencil(boolean isStencil)
     {
         getCOSStream().setBoolean(COSName.IMAGE_MASK, isStencil);
@@ -443,14 +476,23 @@ public final class PDImageXObject extends PDXObject implements PDImage
             return "tiff";
         }
         else if (filters.contains(COSName.FLATE_DECODE)
-                || filters.contains(COSName.LZW_DECODE))
+                || filters.contains(COSName.LZW_DECODE)
+                || filters.contains(COSName.RUN_LENGTH_DECODE))
         {
             return "png";
         }
         else
         {
+            LOG.warn("getSuffix() returns null, filters: " + filters);
             // TODO more...
             return null;
         }
+    }
+    
+    @Override
+    public void clearCache()
+    {
+        super.clearCache();
+        cachedImage = null;
     }
 }

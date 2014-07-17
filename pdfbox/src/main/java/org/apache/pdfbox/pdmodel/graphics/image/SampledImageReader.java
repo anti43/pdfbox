@@ -19,14 +19,9 @@ package org.apache.pdfbox.pdmodel.graphics.image;
 import java.awt.Graphics2D;
 import java.awt.Paint;
 import java.awt.Point;
-import java.awt.Transparency;
-import java.awt.color.ColorSpace;
 import java.awt.image.BufferedImage;
-import java.awt.image.ColorModel;
-import java.awt.image.ComponentColorModel;
 import java.awt.image.DataBuffer;
 import java.awt.image.DataBufferByte;
-import java.awt.image.PackedColorModel;
 import java.awt.image.Raster;
 import java.awt.image.WritableRaster;
 import java.io.ByteArrayInputStream;
@@ -45,6 +40,8 @@ import org.apache.pdfbox.pdmodel.graphics.color.DirectBiTonalImageProducer;
 
 import javax.imageio.stream.ImageInputStream;
 import javax.imageio.stream.MemoryCacheImageInputStream;
+import org.apache.pdfbox.cos.COSFloat;
+import org.apache.pdfbox.cos.COSNumber;
 import org.apache.pdfbox.pdmodel.common.PDMemoryStream;
 
 /**
@@ -66,6 +63,7 @@ final class SampledImageReader
     {
         // get mask (this image)
         BufferedImage mask = getRGBImage(pdImage, null);
+
         // compose to ARGB
         BufferedImage masked = new BufferedImage(mask.getWidth(), mask.getHeight(),
                 BufferedImage.TYPE_INT_ARGB);
@@ -86,22 +84,17 @@ final class SampledImageReader
         WritableRaster raster = masked.getRaster();
         WritableRaster alpha = mask.getRaster();
 
-        int[] rgba = new int[4];
-        final int[] transparent = new int[4];
+        final float[] transparent = new float[4];
+        float[] alphaPixel = null;
         for (int y = 0; y < height; y++)
         {
             for (int x = 0; x < width; x++)
             {
-//                raster.getPixel(x, y, rgba);
-
-                if (alpha.getPixel(x, y, (int[])null)[0] == 255)
+                alphaPixel = alpha.getPixel(x, y, alphaPixel);
+                if (alphaPixel[0] == 255)
                 {
                     raster.setPixel(x, y, transparent);
                 }
-//                else
-//                {
-//                    raster.setPixel(x, y, rgba);
-//                }
             }
         }
 
@@ -161,9 +154,87 @@ final class SampledImageReader
         {
             return from8bit(pdImage, raster);
         }
+        else if (bitsPerComponent == 1 && colorKey == null)
+        {
+            return from1Bit(pdImage, raster);
+        }
         else
         {
             return fromAny(pdImage, raster, colorKey);
+        }
+    }
+    
+    private static BufferedImage from1Bit(PDImage pdImage, WritableRaster raster)
+            throws IOException
+    {
+        final PDColorSpace colorSpace = pdImage.getColorSpace();
+        final int width = pdImage.getWidth();
+        final int height = pdImage.getHeight();
+        final float[] decode = getDecodeArray(pdImage);
+        byte[] output = ((DataBufferByte) raster.getDataBuffer()).getData();
+
+        // read bit stream
+        InputStream iis = null;
+        try
+        {
+            // create stream
+            iis = pdImage.getStream().createInputStream();
+            final boolean isIndexed = colorSpace instanceof PDIndexed;
+
+            int rowLen = width / 8;
+            if (width % 8 > 0)
+            {
+                rowLen++;
+            }
+
+            // read stream
+            byte value0;
+            byte value1;
+            if (isIndexed || decode[0] < decode[1])
+            {
+                value0 = 0;
+                value1 = (byte) 255;
+            }
+            else
+            {
+                value0 = (byte) 255;
+                value1 = 0;
+            }
+            byte[] buff = new byte[rowLen];
+            int idx = 0;
+            for (int y = 0; y < height; y++)
+            {
+                int x = 0;
+                iis.read(buff);
+                for (int r = 0; r < rowLen; r++)
+                {
+                    int value = buff[r];
+                    int mask = 128;
+                    for (int i = 0; i < 8; i++)
+                    {
+                        int bit = value & mask;
+                        mask >>= 1;
+                        output[idx++] = bit == 0 ? value0 : value1;
+                        x++;
+                        if (x == width)
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // use the color space to convert the image to RGB
+            BufferedImage rgbImage = colorSpace.toRGBImage(raster);
+
+            return rgbImage;
+        }
+        finally
+        {
+            if (iis != null)
+            {
+                iis.close();
+            }
         }
     }
 
@@ -210,11 +281,11 @@ final class SampledImageReader
             final int width = pdImage.getWidth();
             final int height = pdImage.getHeight();
             final int numComponents = pdImage.getColorSpace().getNumberOfComponents();
+            int max = width * height;
 
             for (int c = 0; c < numComponents; c++)
             {
                 int sourceOffset = c;
-                int max = width * height;
                 for (int i = 0; i < max; i++)
                 {
                     banks[c][i] = source[sourceOffset];
@@ -229,8 +300,8 @@ final class SampledImageReader
         {
             IOUtils.closeQuietly(input);
         }
-    }
-
+    }    
+    
     // slower, general-purpose image conversion from any image format
     private static BufferedImage fromAny(PDImage pdImage, WritableRaster raster, COSArray colorKey)
             throws IOException
@@ -250,8 +321,6 @@ final class SampledImageReader
             iis = new MemoryCacheImageInputStream(pdImage.getStream().createInputStream());
             final float sampleMax = (float)Math.pow(2, bitsPerComponent) - 1f;
             final boolean isIndexed = colorSpace instanceof PDIndexed;
-            byte[] srcColorValues = new byte[numComponents];
-            byte[] alpha = new byte[1];
 
             // init color key mask
             float[] colorKeyRanges = null;
@@ -270,9 +339,8 @@ final class SampledImageReader
             }
 
             // read stream
-
-
-            ////////////OLD///////////////
+            byte[] srcColorValues = new byte[numComponents];
+            byte[] alpha = new byte[1];
             for (int y = 0; y < height; y++)
             {
                 for (int x = 0; x < width; x++)
@@ -332,6 +400,7 @@ final class SampledImageReader
 
             // use the color space to convert the image to RGB
             BufferedImage rgbImage = colorSpace.toRGBImage(raster);
+
             // apply color mask, if any
             if (colorKeyMask != null)
             {
@@ -367,6 +436,7 @@ final class SampledImageReader
 
         float[] rgb = new float[3];
         float[] rgba = new float[4];
+        float[] alphaPixel = null;
         for (int y = 0; y < height; y++)
         {
             for (int x = 0; x < width; x++)
@@ -376,7 +446,8 @@ final class SampledImageReader
                 rgba[0] = rgb[0];
                 rgba[1] = rgb[1];
                 rgba[2] = rgb[2];
-                rgba[3] = 255 - alpha.getPixel(x, y, (float[])null)[0];
+                alphaPixel = alpha.getPixel(x, y, alphaPixel);
+                rgba[3] = 255 - alphaPixel[0];
 
                 dest.setPixel(x, y, rgba);
             }
@@ -393,24 +464,31 @@ final class SampledImageReader
 
         if (cosDecode != null)
         {
-            decode = cosDecode.toFloatArray();
-
-            // if ImageMask is true then decode must be [0 1] or [1 0]
-            if (pdImage.isStencil() && (decode.length != 2 ||
-                decode[0] < 0 || decode[0] > 1 ||
-                decode[1] < 0 || decode[1] > 1))
+            int numberOfComponents = pdImage.getColorSpace().getNumberOfComponents();
+            if (cosDecode.size() != numberOfComponents * 2)
             {
-                LOG.warn("Ignored invalid decode array: not compatible with ImageMask");
-                decode = null;
+                if (pdImage.isStencil() && cosDecode.size() >= 2
+                        && cosDecode.get(0) instanceof COSNumber
+                        && cosDecode.get(1) instanceof COSNumber)
+                {
+                    float decode0 = ((COSFloat) cosDecode.get(0)).floatValue();
+                    float decode1 = ((COSFloat) cosDecode.get(1)).floatValue();
+                    if (decode0 >= 0 && decode0 <= 1 && decode1 >= 0 && decode1 <= 1)
+                    {
+                        LOG.warn("decode array " + cosDecode
+                                + " not compatible with color space, using the first two entries");
+                        return new float[]
+                        {
+                            decode0, decode1
+                        };
+                    }
+                }
+                LOG.error("decode array " + cosDecode
+                        + " not compatible with color space, using default");
             }
-
-            // otherwise, its length shall be twice the number of colour
-            // components required by ColorSpace
-            int n = pdImage.getColorSpace().getNumberOfComponents();
-            if (decode != null && decode.length != n * 2)
+            else
             {
-                LOG.warn("Ignored invalid decode array: not compatible with color space");
-                decode = null;
+                decode = cosDecode.toFloatArray();
             }
         }
 

@@ -70,7 +70,7 @@ public class AddMetadataFromDocInfo
                 }
                 PDDocumentCatalog catalog = document.getDocumentCatalog();
                 PDDocumentInformation info = document.getDocumentInformation();
-
+                
                 XMPMetadata metadata = new XMPMetadata();
 
                 XMPSchemaPDF pdfSchema = metadata.addPDFSchema();
@@ -89,7 +89,7 @@ public class AddMetadataFromDocInfo
                 dcSchema.setDescription( info.getSubject() );
 
                 PDMetadata metadataStream = new PDMetadata(document);
-                metadataStream.importXMPMetadata( metadata );
+                metadataStream.importXMPMetadata( metadata.asByteArray() );
                 catalog.setMetadata( metadataStream );
 
                 document.save( args[1] );

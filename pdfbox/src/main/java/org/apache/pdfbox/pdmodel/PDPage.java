@@ -42,23 +42,15 @@ import org.apache.pdfbox.pdmodel.interactive.pagenavigation.PDThreadBead;
 /**
  * This represents a single page in a PDF document.
  * 
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * 
+ * @author Ben Litchfield
  */
 public class PDPage implements COSObjectable
 {
-
-    /**
-     * Log instance.
-     */
     private static final Log LOG = LogFactory.getLog(PDPage.class);
-
     private static final int DEFAULT_USER_SPACE_UNIT_DPI = 72;
-
     private static final float MM_TO_UNITS = 1 / (10 * 2.54f) * DEFAULT_USER_SPACE_UNIT_DPI;
 
     private COSDictionary page;
-
     private PDResources pageResources;
 
     /**
@@ -564,7 +556,7 @@ public class PDPage implements COSObjectable
         COSNumber value = (COSNumber) page.getDictionaryObject(COSName.ROTATE);
         if (value != null)
         {
-            retval = new Integer(value.intValue());
+            retval = value.intValue();
         }
         return retval;
     }
@@ -580,7 +572,7 @@ public class PDPage implements COSObjectable
         Integer rotation = getRotation();
         if (rotation != null)
         {
-            retval = rotation.intValue();
+            retval = rotation;
         }
         else
         {
@@ -760,19 +752,26 @@ public class PDPage implements COSObjectable
         page.setItem(COSName.ANNOTS, COSArrayList.converterToCOSArray(annots));
     }
 
-    /**
-     * {@inheritDoc}
-     */
+    @Override
     public boolean equals(Object other)
     {
         return other instanceof PDPage && ((PDPage) other).getCOSObject() == this.getCOSObject();
     }
 
-    /**
-     * {@inheritDoc}
-     */
+    @Override
     public int hashCode()
     {
         return this.getCOSDictionary().hashCode();
+    }
+    
+    /**
+     * Calling this will release all cached information.
+     */
+    public void clearCache()
+    {
+        if (pageResources != null)
+        {
+            pageResources.clearCache();
+        }
     }
 }

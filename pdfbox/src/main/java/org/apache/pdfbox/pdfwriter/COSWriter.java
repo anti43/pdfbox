@@ -18,6 +18,7 @@ package org.apache.pdfbox.pdfwriter;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -36,6 +37,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSBase;
@@ -70,8 +73,14 @@ import org.apache.pdfbox.util.StringUtil;
  * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
  * 
  */
-public class COSWriter implements ICOSVisitor
+public class COSWriter implements ICOSVisitor, Closeable
 {
+
+    /**
+     * Log instance.
+     */
+    private static final Log LOG = LogFactory.getLog(COSWriter.class);
+
     /**
      * The dictionary open token.
      */
@@ -277,7 +286,7 @@ public class COSWriter implements ICOSVisitor
       }
       catch (IOException e)
       {
-        e.printStackTrace();
+        LOG.error(e,e);
       }
     }
     
@@ -507,10 +516,14 @@ public class COSWriter implements ICOSVisitor
         if(obj instanceof COSDictionary)
         {
             COSDictionary dict = (COSDictionary)obj;
-            COSName item = (COSName)dict.getItem(COSName.TYPE);
-            if (COSName.SIG.equals(item) || COSName.DOC_TIME_STAMP.equals(item))
+            COSBase itemType = dict.getItem(COSName.TYPE);
+            if (itemType instanceof COSName)
             {
-                reachedSignature = true;
+                COSName item = (COSName) itemType;
+                if (COSName.SIG.equals(item) || COSName.DOC_TIME_STAMP.equals(item))
+                {
+                    reachedSignature = true;
+                }
             }
         }
 
@@ -607,12 +620,11 @@ public class COSWriter implements ICOSVisitor
             writeXrefEntry(COSWriterXRefEntry.getNullEntry());
             // write entry for every object
             long lastObjectNumber = 0;
-            for (Iterator<COSWriterXRefEntry> i = getXRefEntries().iterator(); i.hasNext();)
+            for (COSWriterXRefEntry entry : getXRefEntries())
             {
-                COSWriterXRefEntry entry = i.next();
                 while( lastObjectNumber<entry.getKey().getNumber()-1 )
                 {
-                  writeXrefEntry(COSWriterXRefEntry.getNullEntry());
+                    writeXrefEntry(COSWriterXRefEntry.getNullEntry());
                 }
                 lastObjectNumber = entry.getKey().getNumber();
                 writeXrefEntry(entry);
@@ -783,8 +795,8 @@ public class COSWriter implements ICOSVisitor
         SignatureInterface signatureInterface = doc.getSignatureInterface();
         byte[] sign = signatureInterface.sign(signStream);
         String signature = new COSString(sign).getHexString();
-
-        if (signature.length() > signatureLength)
+        // substract 2 bytes because of the enclosing "<>"
+        if (signature.length() > signatureLength - 2)
         {
             throw new IOException("Can't write signature, not enough space");
         }
@@ -947,7 +959,7 @@ public class COSWriter implements ICOSVisitor
             }
             else if( current instanceof COSString )
             {
-                COSString copy = new COSString(true);
+                COSString copy = new COSString();
                 copy.append(((COSString)current).getBytes());
                 copy.accept(this);
             }
@@ -1276,7 +1288,7 @@ public class COSWriter implements ICOSVisitor
      * @throws IOException If an error occurs while generating the data.
      */
     public void write(PDDocument doc) throws IOException
-	{
+    {
         Long idTime = doc.getDocumentId() == null ? System.currentTimeMillis() : 
                                                     doc.getDocumentId();
 

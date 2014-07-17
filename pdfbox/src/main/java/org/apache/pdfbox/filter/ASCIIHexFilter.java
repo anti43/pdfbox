@@ -49,8 +49,8 @@ final class ASCIIHexFilter extends Filter
     };
 
     @Override
-    protected final DecodeResult decode(InputStream encoded, OutputStream decoded,
-                                         COSDictionary parameters) throws IOException
+    public final DecodeResult decode(InputStream encoded, OutputStream decoded,
+                                         COSDictionary parameters, int index) throws IOException
     {
         int value, firstByte, secondByte;
         while ((firstByte = encoded.read()) != -1)
@@ -60,7 +60,7 @@ final class ASCIIHexFilter extends Filter
             {
                 firstByte = encoded.read();
             }
-            if (isEOD(firstByte))
+            if (firstByte == -1 || isEOD(firstByte))
             {
                 break;
             }
@@ -72,7 +72,7 @@ final class ASCIIHexFilter extends Filter
             value = REVERSE_HEX[firstByte] * 16;
             secondByte = encoded.read();
        
-            if (isEOD(secondByte)) 
+            if (secondByte == -1 || isEOD(secondByte)) 
             {
                 // second value behaves like 0 in case of EOD
                 decoded.write(value);

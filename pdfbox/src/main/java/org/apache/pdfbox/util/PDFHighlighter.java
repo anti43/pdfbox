@@ -56,7 +56,6 @@ public class PDFHighlighter extends PDFTextStripper
     {
         super(ENCODING);
         super.setLineSeparator( "" );
-        super.setPageSeparator( "" );
         super.setWordSeparator( "" );
         super.setShouldSeparateByBeads( false );
         super.setSuppressDuplicateOverlappingText( false );
@@ -117,14 +116,13 @@ public class PDFHighlighter extends PDFTextStripper
         //page = CCRStringUtil.stripChar(page, '\r');
 
         // Traitement des listes � puces (caract�res sp�ciaux)
-        if (page.indexOf("a") != -1)
+        if (page.indexOf('a') != -1)
         {
             page = page.replaceAll("a[0-9]{1,3}", ".");
         }
-
-        for (int i = 0; i < searchedWords.length; i++)
+        for (String searchedWord : searchedWords)
         {
-            Pattern pattern = Pattern.compile(searchedWords[i], Pattern.CASE_INSENSITIVE);
+            Pattern pattern = Pattern.compile(searchedWord, Pattern.CASE_INSENSITIVE);
             Matcher matcher = pattern.matcher(page);
             while( matcher.find() )
             {

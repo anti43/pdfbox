@@ -19,6 +19,7 @@ package org.apache.pdfbox.cos;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
+import java.io.Closeable;
 import java.io.InputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -42,7 +43,7 @@ import org.apache.pdfbox.pdfparser.PDFStreamParser;
  *
  * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
  */
-public class COSStream extends COSDictionary
+public class COSStream extends COSDictionary implements Closeable
 {
     /**
      * Log instance.
@@ -150,7 +151,7 @@ public class COSStream extends COSDictionary
             doEncode();
         }
         long position = filteredStream.getPosition();
-        long length = filteredStream.getLength();
+        long length = filteredStream.getLengthWritten();
 
         RandomAccessFileInputStream input =
             new RandomAccessFileInputStream( file, position, length );
@@ -180,7 +181,7 @@ public class COSStream extends COSDictionary
      *
      * @throws IOException when encoding/decoding causes an exception
      */
-    public InputStream  getUnfilteredStream() throws IOException
+    public InputStream getUnfilteredStream() throws IOException
     {
         InputStream retval;
         if( unFilteredStream == null )
@@ -310,7 +311,7 @@ public class COSStream extends COSDictionary
         // in case we need it later
         long writtenLength = unFilteredStream.getLengthWritten();  
 
-        if( length == 0 )
+        if (length == 0 && writtenLength == 0)
         {
             //if the length is zero then don't bother trying to decode
             //some filters don't work when attempting to decode
@@ -324,7 +325,7 @@ public class COSStream extends COSDictionary
             //ok this is a simple hack, sometimes we read a couple extra
             //bytes that shouldn't be there, so we encounter an error we will just
             //try again with one less byte.
-            for( int tryCount=0; !done && tryCount<5; tryCount++ )
+            for (int tryCount = 0; length > 0 && !done && tryCount < 5; tryCount++)
             {
                 InputStream input = null;
                 try
@@ -517,6 +518,7 @@ public class COSStream extends COSDictionary
         return new BufferedOutputStream( unFilteredStream, BUFFER_SIZE );
     }
     
+    @Override
     public void close()
     {
         try

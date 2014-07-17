@@ -22,6 +22,7 @@ import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.rendering.printing.Orientation;
 import org.apache.pdfbox.rendering.printing.Scaling;
 
+import javax.print.attribute.PrintRequestAttributeSet;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Dimension;
@@ -42,7 +43,7 @@ import java.io.IOException;
  * Prints a PDF document using AWT.
  * This class may be overridden in order to perform custom printing.
  *
- * @author Andreas Lehmk�hler
+ * @author Andreas Lehmkühler
  * @author John Hewson
  */
 public class PDFPrinter
@@ -57,7 +58,7 @@ public class PDFPrinter
     protected final float dpi;
 
     /**
-     * Creates a new PDFPrinter.
+     * Creates a new PDFPrinter using the system's default printer.
      * @param document the document to print
      */
     public PDFPrinter(PDDocument document) throws PrinterException
@@ -66,7 +67,7 @@ public class PDFPrinter
     }
 
     /**
-     * Creates a new PDFPrinter for a given printer job.
+     * Creates a new PDFPrinter using the given printer.
      * @param document the document to print
      * @param printerJob the printer job to use
      */
@@ -76,7 +77,9 @@ public class PDFPrinter
     }
 
     /**
-     * Creates a new PDFPrinter with the given page scaling and orientation.
+     * Creates a new PDFPrinter using the system's default printer,
+     * with the given page scaling and orientation.
+     *
      * @param document the document to print
      * @param scaling page scaling policy
      * @param orientation page orientation policy
@@ -88,7 +91,9 @@ public class PDFPrinter
     }
 
     /**
-     * Creates a new PDFPrinter with the given page scaling and orientation.
+     * Creates a new PDFPrinter using the system's default printer,
+     * with the given page scaling and orientation.
+     *
      * @param document the document to print
      * @param scaling page scaling policy
      * @param orientation page orientation policy
@@ -100,7 +105,9 @@ public class PDFPrinter
     }
 
     /**
-     * Creates a new PDFPrinter with the given page scaling and orientation.
+     * Creates a new PDFPrinter using the system's default printer,
+     * with the given page scaling and orientation.
+     *
      * @param document the document to print
      * @param scaling page scaling policy
      * @param orientation page orientation policy
@@ -113,8 +120,9 @@ public class PDFPrinter
     }
 
     /**
-     * Creates a new PDFPrinter for a given printer job, the given page scaling and orientation,
+     * Creates a new PDFPrinter using the given printer, the given page scaling and orientation,
      * and with optional page borders shown.
+     *
      * @param document the document to print
      * @param printerJob the printer job to use
      * @param scaling page scaling policy
@@ -160,12 +168,22 @@ public class PDFPrinter
 
     /**
      * Prints the given document using the default printer without prompting the user.
+     * @param attributes application supplied attributes
+     * @throws PrinterException if the document cannot be printed
+     */
+    public boolean silentPrint(PrintRequestAttributeSet attributes) throws PrinterException
+    {
+        return print(printerJob, attributes, true);
+    }
+
+    /**
+     * Prints the given document using the default printer without prompting the user.
      * @param printerJob a printer job definition
      * @throws PrinterException if the document cannot be printed
      */
     public void silentPrint(PrinterJob printerJob) throws PrinterException
     {
-        print(printerJob, true);
+        print(printerJob, null, true);
     }
 
     /**
@@ -173,31 +191,56 @@ public class PDFPrinter
      * The image is generated using {@link PageDrawer}.
      * This is a convenience method to create the java.awt.print.PrinterJob.
      * Advanced printing tasks can be performed using {@link #getPageable()} instead.
+     *
+     * @return true if the user does not cancel the dialog
      * @throws PrinterException if the document cannot be printed
      */
-    public void print() throws PrinterException
+    public boolean print() throws PrinterException
     {
-        print(printerJob);
+        return print(printerJob);
+    }
+
+    /**
+     * Prints the given document using the default printer without prompting the user.
+     * The image is generated using {@link PageDrawer}.
+     * This is a convenience method to create the java.awt.print.PrinterJob.
+     * Advanced printing tasks can be performed using {@link #getPageable()} instead.
+     *
+     * @param attributes application supplied attributes
+     * @return true if the user does not cancel the dialog
+     * @throws PrinterException if the document cannot be printed
+     */
+    public boolean print(PrintRequestAttributeSet attributes) throws PrinterException
+    {
+        return print(printerJob, attributes);
     }
 
     /**
      * Prints the given document using the default printer without prompting the user.
      * @param printerJob the printer job.
+     * @return true if the user does not cancel the dialog
      * @throws PrinterException if the document cannot be printed
      */
-    public void print(PrinterJob printerJob) throws PrinterException
+    public boolean print(PrinterJob printerJob) throws PrinterException
     {
-        print(printerJob, false);
+        return print(printerJob, null, false);
     }
 
-    // todo: new
-    public PDFPageable getPageable()
+    /**
+     * Prints the given document using the default printer without prompting the user.
+     * @param printerJob the printer job.
+     * @param attributes application supplied attributes
+     * @return true if the user does not cancel the dialog
+     * @throws PrinterException if the document cannot be printed
+     */
+    public boolean print(PrinterJob printerJob, PrintRequestAttributeSet attributes) throws PrinterException
     {
-        return new PDFPageable();
+        return print(printerJob, attributes, false);
     }
 
     // prints a document
-    private void print(PrinterJob job, boolean isSilent) throws PrinterException
+    private boolean print(PrinterJob job, PrintRequestAttributeSet attributes, boolean isSilent)
+        throws PrinterException
     {
         if (job == null)
         {
@@ -205,12 +248,43 @@ public class PDFPrinter
         }
         else
         {
-            job.setPageable(new PDFPageable());
-            if (isSilent || job.printDialog())
+            job.setPageable(getPageable());
+            if (isSilent && attributes == null)
             {
                 job.print();
+                return true;
+            }
+            else if (isSilent)
+            {
+                job.print(attributes);
+                return true;
+            }
+            else if (attributes == null)
+            {
+                if (job.printDialog())
+                {
+                    job.print();
+                    return true;
+                }
+            }
+            else
+            {
+                if (job.printDialog(attributes))
+                {
+                    job.print();
+                    return true;
+                }
             }
         }
+        return false;
+    }
+
+    /**
+     * Returns the Pageable instance used in this class. Can be overridden by subclasses.
+     */
+    public PDFPageable getPageable()
+    {
+      return new PDFPageable();
     }
 
     protected class PDFPageable implements Pageable
@@ -224,6 +298,10 @@ public class PDFPrinter
         @Override
         public PageFormat getPageFormat(int pageIndex) throws IndexOutOfBoundsException
         {
+            // note: PDFPrintable#print() is responsible for fitting the current page to
+            //       the printer's actual paper size, so this method must return the full
+            //       physical, printable size of the actual paper in the printer.
+
             PageFormat format = printerJob.defaultPage();
             PDPage page = document.getPage(pageIndex);
 

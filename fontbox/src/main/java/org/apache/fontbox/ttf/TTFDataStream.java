@@ -16,11 +16,13 @@
  */
 package org.apache.fontbox.ttf;
 
+import java.io.Closeable;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
+import java.util.TimeZone;
 
 /**
  * An interface into a data stream.
@@ -28,7 +30,7 @@ import java.util.GregorianCalendar;
  * @author Ben Litchfield (ben@benlitchfield.com)
  * 
  */
-public abstract class TTFDataStream
+public abstract class TTFDataStream implements Closeable
 {
 
     /**
@@ -193,7 +195,9 @@ public abstract class TTFDataStream
     public Calendar readInternationalDate() throws IOException
     {
         long secondsSince1904 = readLong();
-        GregorianCalendar cal = new GregorianCalendar(1904, 0, 1);
+        Calendar cal = GregorianCalendar.getInstance(TimeZone.getTimeZone("UTC"));
+        cal.set(1904, 0, 1, 0, 0, 0);
+        cal.set(Calendar.MILLISECOND, 0);
         long millisFor1904 = cal.getTimeInMillis();
         millisFor1904 += (secondsSince1904 * 1000);
         cal.setTimeInMillis(millisFor1904);
@@ -205,6 +209,7 @@ public abstract class TTFDataStream
      * 
      * @throws IOException If there is an error closing the resources.
      */
+    @Override
     public abstract void close() throws IOException;
 
     /**

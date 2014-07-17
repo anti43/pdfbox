@@ -16,7 +16,9 @@
  */
 package org.apache.pdfbox.pdmodel.graphics.image;
 
+import java.awt.Transparency;
 import java.awt.image.BufferedImage;
+import java.awt.image.WritableRaster;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -30,7 +32,6 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
-import org.apache.pdfbox.cos.COSStream;
 import org.apache.pdfbox.util.ImageIOUtil;
 
 /**
@@ -64,19 +65,16 @@ public final class JPEGFactory extends ImageFactory
         byteStream.reset();
 
         // create Image XObject from stream
-        PDImageXObject pdImage = new PDImageXObject(document, byteStream);
-
-        // add DCT filter
-        pdImage.getCOSStream().setItem(COSName.FILTER, COSName.DCT_DECODE);
+        PDImageXObject pdImage = new PDImageXObject(document, byteStream, 
+                COSName.DCT_DECODE, awtImage.getWidth(), awtImage.getHeight(), 
+                awtImage.getColorModel().getComponentSize(0),
+                getColorSpaceFromAWT(awtImage));
 
         // no alpha
         if (awtImage.getColorModel().hasAlpha())
         {
             throw new UnsupportedOperationException("alpha channel not implemented");
         }
-
-        // set properties (width, height, depth, color space, etc.)
-        setPropertiesFromAWT(awtImage, pdImage);
 
         return pdImage;
     }
@@ -163,6 +161,23 @@ public final class JPEGFactory extends ImageFactory
         return createJPEG(document, image, quality, dpi);
     }
     
+    // returns the alpha channel of an image
+    private static BufferedImage getAlphaImage(BufferedImage image) throws IOException
+    {
+        if (!image.getColorModel().hasAlpha())
+        {
+            return null;
+        }
+        if (image.getTransparency() == Transparency.BITMASK)
+        {
+            throw new UnsupportedOperationException("BITMASK Transparency JPEG compression is not useful, use LosslessImageFactory instead");
+        }
+        WritableRaster alphaRaster = image.getAlphaRaster();
+        BufferedImage alphaImage = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_BYTE_GRAY);
+        alphaImage.setData(alphaRaster);
+        return alphaImage;
+    }
+    
     // Creates an Image XObject from a Buffered Image using JAI Image I/O
     private static PDImageXObject createJPEG(PDDocument document, BufferedImage image,
                                              float quality, int dpi) throws IOException
@@ -172,24 +187,22 @@ public final class JPEGFactory extends ImageFactory
         BufferedImage awtAlphaImage = getAlphaImage(image);
 
         // create XObject
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        ImageIOUtil.writeImage(image, "jpeg", bos, dpi, quality);
-        ByteArrayInputStream byteStream = new ByteArrayInputStream(bos.toByteArray());
-        PDImageXObject pdImage = new PDImageXObject(document, byteStream);
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        ImageIOUtil.writeImage(awtColorImage, "jpeg", baos, dpi, quality);
+        ByteArrayInputStream byteStream = new ByteArrayInputStream(baos.toByteArray());
         
-        // add DCT filter
-        COSStream dict = pdImage.getCOSStream();
-        dict.setItem(COSName.FILTER, COSName.DCT_DECODE);
+        
+        PDImageXObject pdImage = new PDImageXObject(document, byteStream, 
+                COSName.DCT_DECODE, awtColorImage.getWidth(), awtColorImage.getHeight(), 
+                awtColorImage.getColorModel().getComponentSize(0),
+                getColorSpaceFromAWT(awtColorImage));
 
         // alpha -> soft mask
         if (awtAlphaImage != null)
         {
             PDImage xAlpha = JPEGFactory.createFromImage(document, awtAlphaImage, quality);
-            dict.setItem(COSName.SMASK, xAlpha);
+            pdImage.getCOSStream().setItem(COSName.SMASK, xAlpha);
         }
-
-        // set properties (width, height, depth, color space, etc.)
-        setPropertiesFromAWT(awtColorImage, pdImage);
 
         return pdImage;
     }

@@ -26,7 +26,7 @@ import java.security.InvalidKeyException;
 import java.security.KeyStoreException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
+import java.security.PrivateKey;
 import java.security.SecureRandom;
 import java.security.Security;
 import java.security.cert.CertificateEncodingException;
@@ -41,9 +41,9 @@ import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
 
 import org.bouncycastle.asn1.ASN1InputStream;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.ASN1Set;
-import org.bouncycastle.asn1.DERObjectIdentifier;
 import org.bouncycastle.asn1.DEROctetString;
 import org.bouncycastle.asn1.DEROutputStream;
 import org.bouncycastle.asn1.DERSet;
@@ -60,6 +60,7 @@ import org.bouncycastle.asn1.x509.TBSCertificateStructure;
 import org.bouncycastle.cms.CMSEnvelopedData;
 import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.cms.RecipientInformation;
+import org.bouncycastle.cms.jcajce.JceKeyTransEnvelopedRecipient;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSString;
@@ -134,17 +135,18 @@ public final class PublicKeySecurityHandler extends SecurityHandler
                                      DecryptionMaterial decryptionMaterial)
                                      throws IOException
     {
-	      if(encryption.getLength() != 0)
-	      {
-	          this.keyLength = encryption.getLength();
-	      }
-	
 	      if(!(decryptionMaterial instanceof PublicKeyDecryptionMaterial))
 	      {
 	          throw new IOException(
 	              "Provided decryption material is not compatible with the document");
 	      }
 	
+          decryptMetadata = encryption.isEncryptMetaData();
+          if(encryption.getLength() != 0)
+          {
+              this.keyLength = encryption.getLength();
+          }
+    
 	      PublicKeyDecryptionMaterial material = (PublicKeyDecryptionMaterial)decryptionMaterial;
 	
 	      try
@@ -165,7 +167,7 @@ public final class PublicKeySecurityHandler extends SecurityHandler
 	              COSString recipientFieldString = encryption.getRecipientStringAt(i);
 	              byte[] recipientBytes = recipientFieldString.getBytes();
 	              CMSEnvelopedData data = new CMSEnvelopedData(recipientBytes);
-	              Iterator recipCertificatesIt = data.getRecipientInfos().getRecipients().iterator();
+	              Iterator<?> recipCertificatesIt = data.getRecipientInfos().getRecipients().iterator();
 	              while(recipCertificatesIt.hasNext())
 	              {
 	                  RecipientInformation ri =
@@ -175,7 +177,8 @@ public final class PublicKeySecurityHandler extends SecurityHandler
 	                  if(ri.getRID().match(material.getCertificate()) && !foundRecipient)
 	                  {
 	                      foundRecipient = true;
-	                      envelopedData = ri.getContent(material.getPrivateKey(), "BC");
+	                      PrivateKey privateKey = (PrivateKey)material.getPrivateKey();
+	                      envelopedData = ri.getContent(new JceKeyTransEnvelopedRecipient(privateKey).setProvider("BC"));
 	                      break;
 	                  }
 	              }
@@ -208,13 +211,11 @@ public final class PublicKeySecurityHandler extends SecurityHandler
 	
 	          // put each bytes of the recipients array in the sha1 input
 	          int sha1InputOffset = 20;
-	          for(int i=0; i<recipientFieldsBytes.length; i++)
-	          {
-	              System.arraycopy(
-	                  recipientFieldsBytes[i], 0,
-	                  sha1Input, sha1InputOffset, recipientFieldsBytes[i].length);
-	              sha1InputOffset += recipientFieldsBytes[i].length;
-	          }
+                  for (byte[] recipientFieldsByte : recipientFieldsBytes)
+                  {
+                      System.arraycopy(recipientFieldsByte, 0, sha1Input, sha1InputOffset, recipientFieldsByte.length);
+                      sha1InputOffset += recipientFieldsByte.length;
+                  }
 	
 	          MessageDigest md = MessageDigests.getSHA1();
 	          byte[] mdResult = md.digest(sha1Input);
@@ -228,10 +229,6 @@ public final class PublicKeySecurityHandler extends SecurityHandler
 	          throw new IOException(e);
 	      }
 	      catch(KeyStoreException e)
-	      {
-	          throw new IOException(e);
-	      }
-	      catch(NoSuchProviderException e)
 	      {
 	          throw new IOException(e);
 	      }
@@ -287,13 +284,13 @@ public final class PublicKeySecurityHandler extends SecurityHandler
             System.arraycopy(sk.getEncoded(), 0, seed, 0, 20); // create the 20 bytes seed
 
 
-            Iterator it = policy.getRecipientsIterator();
+            Iterator<PublicKeyRecipient> it = policy.getRecipientsIterator();
             int i = 0;
 
 
             while(it.hasNext())
             {
-                PublicKeyRecipient recipient = (PublicKeyRecipient)it.next();
+                PublicKeyRecipient recipient = it.next();
                 X509Certificate certificate = recipient.getX509();
                 int permission = recipient.getPermission().getPermissionBytesForPublicKey();
 
@@ -393,6 +390,7 @@ public final class PublicKeySecurityHandler extends SecurityHandler
 
         ASN1InputStream input = new ASN1InputStream(parameters.getEncoded("ASN.1"));
         ASN1Primitive object = input.readObject();
+        input.close();
 
         keygen.init(128);
         SecretKey secretkey = keygen.generateKey();
@@ -403,7 +401,7 @@ public final class PublicKeySecurityHandler extends SecurityHandler
         KeyTransRecipientInfo recipientInfo = computeRecipientInfo(cert, secretkey.getEncoded());
         DERSet set = new DERSet(new RecipientInfo(recipientInfo));
 
-        AlgorithmIdentifier algorithmId = new AlgorithmIdentifier(new DERObjectIdentifier(algorithm), object);
+        AlgorithmIdentifier algorithmId = new AlgorithmIdentifier(new ASN1ObjectIdentifier(algorithm), object);
         EncryptedContentInfo encryptedInfo = new EncryptedContentInfo(PKCSObjectIdentifiers.data, algorithmId, new DEROctetString(bytes));
         EnvelopedData enveloped = new EnvelopedData(null, set, encryptedInfo, (ASN1Set) null);
 
@@ -416,9 +414,10 @@ public final class PublicKeySecurityHandler extends SecurityHandler
             BadPaddingException, IllegalBlockSizeException
     {
         ASN1InputStream input = new ASN1InputStream(x509certificate.getTBSCertificate());
-
         TBSCertificateStructure certificate = TBSCertificateStructure.getInstance(input.readObject());
-        AlgorithmIdentifier algorithmId = certificate.getSubjectPublicKeyInfo().getAlgorithmId();
+        input.close();
+
+        AlgorithmIdentifier algorithmId = certificate.getSubjectPublicKeyInfo().getAlgorithm();
 
         IssuerAndSerialNumber serial = new IssuerAndSerialNumber(
                 certificate.getIssuer(),
@@ -427,7 +426,7 @@ public final class PublicKeySecurityHandler extends SecurityHandler
         Cipher cipher;
         try
         {
-            cipher = Cipher.getInstance(algorithmId.getObjectId().getId());
+            cipher = Cipher.getInstance(algorithmId.getAlgorithm().getId());
         }
         catch (NoSuchAlgorithmException e)
         {

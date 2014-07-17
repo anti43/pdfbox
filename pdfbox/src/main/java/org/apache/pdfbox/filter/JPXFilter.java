@@ -23,7 +23,6 @@ import java.awt.image.WritableRaster;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Iterator;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
@@ -31,7 +30,6 @@ import javax.imageio.stream.ImageInputStream;
 
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSName;
-import org.apache.pdfbox.pdmodel.graphics.color.PDColorSpace;
 import org.apache.pdfbox.pdmodel.graphics.color.PDJPXColorSpace;
 
 /**
@@ -52,8 +50,8 @@ import org.apache.pdfbox.pdmodel.graphics.color.PDJPXColorSpace;
 public final class JPXFilter extends Filter
 {
     @Override
-    protected final DecodeResult decode(InputStream encoded, OutputStream decoded,
-                                         COSDictionary parameters) throws IOException
+    public final DecodeResult decode(InputStream encoded, OutputStream decoded,
+                                         COSDictionary parameters, int index) throws IOException
     {
         DecodeResult result = new DecodeResult(new COSDictionary());
         result.getParameters().addAll(parameters);
@@ -71,29 +69,14 @@ public final class JPXFilter extends Filter
     }
 
     // try to read using JAI Image I/O
-    private static BufferedImage readJPX(InputStream input, DecodeResult result) throws IOException
+    private BufferedImage readJPX(InputStream input, DecodeResult result) throws IOException
     {
-        // find suitable image reader
-        Iterator readers = ImageIO.getImageReadersByFormatName("JPEG2000");
-        ImageReader reader = null;
-        while(readers.hasNext()) {
-            reader = (ImageReader)readers.next();
-            if(reader.canReadRaster()) {
-                break;
-            }
-        }
-
-        if (reader == null)
-        {
-            throw new MissingImageReaderException("Cannot read JPEG 2000 (JPX) image: " +
-                    "Java Advanced Imaging (JAI) Image I/O Tools are not installed");
-        }
-
+        ImageReader reader = findImageReader("JPEG2000", "Java Advanced Imaging (JAI) Image I/O Tools are not installed");
         ImageInputStream iis = null;
         try
         {
             iis = ImageIO.createImageInputStream(input);
-            reader.setInput(iis);
+            reader.setInput(iis, true, true);
 
             BufferedImage image;
             try

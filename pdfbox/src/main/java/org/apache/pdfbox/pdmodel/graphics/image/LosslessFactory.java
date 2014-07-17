@@ -16,6 +16,7 @@
 package org.apache.pdfbox.pdmodel.graphics.image;
 
 import java.awt.Color;
+import java.awt.Transparency;
 import java.awt.image.BufferedImage;
 import java.awt.image.WritableRaster;
 import java.io.ByteArrayInputStream;
@@ -27,10 +28,10 @@ import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.filter.Filter;
 import org.apache.pdfbox.filter.FilterFactory;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.graphics.color.PDColorSpace;
 import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceColorSpace;
 import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceGray;
 import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceRGB;
-import static org.apache.pdfbox.pdmodel.graphics.image.ImageFactory.getColorImage;
 
 /**
  * Factory for creating a PDImageXObject containing a lossless compressed image.
@@ -53,10 +54,9 @@ public class LosslessFactory
         int bpc;
         PDDeviceColorSpace deviceColorSpace;
 
-        // extract color channel
-        BufferedImage awtColorImage = getColorImage(image);
-
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        int height = image.getHeight();
+        int width = image.getWidth();
 
         if ((image.getType() == BufferedImage.TYPE_BYTE_GRAY
                 || image.getType() == BufferedImage.TYPE_BYTE_BINARY)
@@ -67,16 +67,17 @@ public class LosslessFactory
             // grayscale images need one color per sample
             bpc = image.getColorModel().getPixelSize();
             deviceColorSpace = PDDeviceGray.INSTANCE;
-            int h = awtColorImage.getHeight();
-            int w = awtColorImage.getWidth();
-            for (int y = 0; y < h; ++y)
+            for (int y = 0; y < height; ++y)
             {
-                for (int x = 0; x < w; ++x)
+                for (int x = 0; x < width; ++x)
                 {
-                    mcios.writeBits(awtColorImage.getRGB(x, y), bpc);
+                    mcios.writeBits(image.getRGB(x, y) & 0xFF, bpc);
                 }
             }
-            mcios.writeBits(0, 7); // padding
+            while (mcios.getBitOffset() != 0)
+            {
+                mcios.writeBit(0);
+            }
             mcios.flush();
             mcios.close();
         }
@@ -85,13 +86,11 @@ public class LosslessFactory
             // RGB
             bpc = 8;
             deviceColorSpace = PDDeviceRGB.INSTANCE;
-            int h = awtColorImage.getHeight();
-            int w = awtColorImage.getWidth();
-            for (int y = 0; y < h; ++y)
+            for (int y = 0; y < height; ++y)
             {
-                for (int x = 0; x < w; ++x)
+                for (int x = 0; x < width; ++x)
                 {
-                    Color color = new Color(awtColorImage.getRGB(x, y));
+                    Color color = new Color(image.getRGB(x, y));
                     bos.write(color.getRed());
                     bos.write(color.getGreen());
                     bos.write(color.getBlue());
@@ -99,35 +98,22 @@ public class LosslessFactory
             }
         }
 
-        ByteArrayInputStream bais = new ByteArrayInputStream(bos.toByteArray());
-
-        Filter filter = FilterFactory.INSTANCE.getFilter(COSName.FLATE_DECODE);
-        ByteArrayOutputStream bos2 = new ByteArrayOutputStream();
-        filter.encode(bais, bos2, new COSDictionary(), 0);
-
-        ByteArrayInputStream filteredByteStream = new ByteArrayInputStream(bos2.toByteArray());
-        PDImageXObject pdImage = new PDImageXObject(document, filteredByteStream);
-
-        COSDictionary dict = pdImage.getCOSStream();
-        dict.setItem(COSName.FILTER, COSName.FLATE_DECODE);
-
-        pdImage.setColorSpace(deviceColorSpace);
-        pdImage.setBitsPerComponent(bpc);
-        pdImage.setHeight(awtColorImage.getHeight());
-        pdImage.setWidth(awtColorImage.getWidth());
+        PDImageXObject pdImage = prepareImageXObject(document, bos.toByteArray(), 
+                image.getWidth(), image.getHeight(), bpc, deviceColorSpace);
 
         // alpha -> soft mask
         PDImage xAlpha = createAlphaFromARGBImage(document, image);
         if (xAlpha != null)
         {
-            dict.setItem(COSName.SMASK, xAlpha);
+            pdImage.getCOSStream().setItem(COSName.SMASK, xAlpha);
         }
 
         return pdImage;
     }
 
     /**
-     * Creates a grayscale PDImageXObject from the alpha channel of an image.
+     * Creates a grayscale Flate encoded PDImageXObject from the alpha channel
+     * of an image.
      *
      * @param document the document where the image will be created.
      * @param image an ARGB image.
@@ -143,9 +129,6 @@ public class LosslessFactory
         // SinglePixelPackedSampleModel, i.e. the values can be used 1:1 for
         // the stream. 
         // Sadly the type of the databuffer is TYPE_INT and not TYPE_BYTE.
-        //TODO: optimize this to lessen the memory footprint.
-        // possible idea? Derive an inputStream that reads from the raster.
-
         if (!image.getColorModel().hasAlpha())
         {
             return null;
@@ -159,28 +142,62 @@ public class LosslessFactory
                 alphaRaster.getSampleModel().getHeight(),
                 (int[]) null);
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        for (int pixel : pixels)
+        int bpc;
+        if (image.getTransparency() == Transparency.BITMASK)
         {
-            bos.write(pixel);
+            bpc = 1;
+            MemoryCacheImageOutputStream mcios = new MemoryCacheImageOutputStream(bos);
+            for (int pixel : pixels)
+            {
+                mcios.writeBit(pixel);
+            }
+            while (mcios.getBitOffset() != 0)
+            {
+                mcios.writeBit(0);
+            }
+            mcios.flush();
+            mcios.close();
         }
-        ByteArrayInputStream bais = new ByteArrayInputStream(bos.toByteArray());
+        else
+        {
+            bpc = 8;
+            for (int pixel : pixels)
+            {
+                bos.write(pixel);
+            }
+        }
 
-        Filter filter = FilterFactory.INSTANCE.getFilter(COSName.FLATE_DECODE);
-        ByteArrayOutputStream bos2 = new ByteArrayOutputStream();
-        filter.encode(bais, bos2, new COSDictionary(), 0);
-
-        ByteArrayInputStream filteredByteStream = new ByteArrayInputStream(bos2.toByteArray());
-        PDImageXObject pdImage = new PDImageXObject(document, filteredByteStream);
-
-        COSDictionary dict = pdImage.getCOSStream();
-        dict.setItem(COSName.FILTER, COSName.FLATE_DECODE);
-
-        pdImage.setColorSpace(PDDeviceGray.INSTANCE);
-        pdImage.setBitsPerComponent(8);
-        pdImage.setHeight(image.getHeight());
-        pdImage.setWidth(image.getWidth());
+        PDImageXObject pdImage = prepareImageXObject(document, bos.toByteArray(), 
+                image.getWidth(), image.getHeight(), bpc, PDDeviceGray.INSTANCE);
 
         return pdImage;
+    }
+
+    /**
+     * Create a PDImageXObject while making a decision whether not to 
+     * compress, use Flate filter only, or Flate and LZW filters.
+     * 
+     * @param document The document.
+     * @param byteArray array with data.
+     * @param width the image width
+     * @param height the image height
+     * @param bitsPerComponent the bits per component
+     * @param initColorSpace the color space
+     * @return the newly created PDImageXObject with the data compressed.
+     * @throws IOException 
+     */
+    private static PDImageXObject prepareImageXObject(PDDocument document, 
+            byte [] byteArray, int width, int height, int bitsPerComponent, 
+            PDColorSpace initColorSpace) throws IOException
+    {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+
+        Filter filter = FilterFactory.INSTANCE.getFilter(COSName.FLATE_DECODE);
+        filter.encode(new ByteArrayInputStream(byteArray), baos, new COSDictionary(), 0);
+
+        ByteArrayInputStream filteredByteStream = new ByteArrayInputStream(baos.toByteArray());
+        return new PDImageXObject(document, filteredByteStream, COSName.FLATE_DECODE, 
+                width, height, bitsPerComponent, initColorSpace);
     }
 
 }

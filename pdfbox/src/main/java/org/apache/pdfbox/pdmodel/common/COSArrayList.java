@@ -31,6 +31,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
+import org.apache.pdfbox.cos.COSObject;
 
 /**
  * This is an implementation of a List that will sync its contents to a COSArray.
@@ -267,17 +268,26 @@ public class COSArrayList<E> implements List<E>
      *
      * @return A list that is part of the core Java collections.
      */
-    public static List<Integer> convertIntegerCOSArrayToList( COSArray intArray )
+    public static List<Integer> convertIntegerCOSArrayToList(COSArray intArray)
     {
         List<Integer> retval = null;
         if (intArray != null)
         {
             List<Integer> numbers = new ArrayList<Integer>();
-            for( int i=0; i<intArray.size(); i++ )
+            for (int i = 0; i < intArray.size(); i++)
             {
-                numbers.add( new Integer( ((COSNumber)intArray.get( i )).intValue() ) );
+                COSNumber num;
+                if (intArray.get(i) instanceof COSObject)
+                {
+                    num = (COSNumber) ((COSObject) intArray.get(i)).getObject();
+                }
+                else
+                {
+                    num = (COSNumber) intArray.get(i);
+                }
+                numbers.add(num.intValue());
             }
-            retval = new COSArrayList<Integer>( numbers, intArray );
+            retval = new COSArrayList<Integer>(numbers, intArray);
         }
         return retval;
     }
@@ -298,7 +308,7 @@ public class COSArrayList<E> implements List<E>
             List<Float> numbers = new ArrayList<Float>();
             for( int i=0; i<floatArray.size(); i++ )
             {
-                numbers.add( new Float( ((COSNumber)floatArray.get( i )).floatValue() ) );
+                numbers.add( ((COSNumber)floatArray.get( i )).floatValue());
             }
             retval = new COSArrayList<Float>( numbers, floatArray );
         }
@@ -362,9 +372,9 @@ public class COSArrayList<E> implements List<E>
     public static COSArray convertStringListToCOSNameCOSArray( List<String> strings )
     {
         COSArray retval = new COSArray();
-        for( int i=0; i<strings.size(); i++ )
+        for (String string : strings)
         {
-            retval.add( COSName.getPDFName( strings.get( i ) ) );
+            retval.add(COSName.getPDFName(string));
         }
         return retval;
     }
@@ -380,9 +390,9 @@ public class COSArrayList<E> implements List<E>
     public static COSArray convertStringListToCOSStringCOSArray( List<String> strings )
     {
         COSArray retval = new COSArray();
-        for( int i=0; i<strings.size(); i++ )
+        for (String string : strings)
         {
-            retval.add( new COSString( strings.get( i ) ) );
+            retval.add(new COSString(string));
         }
         return retval;
     }

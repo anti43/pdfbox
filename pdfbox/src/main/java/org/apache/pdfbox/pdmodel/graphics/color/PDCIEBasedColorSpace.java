@@ -16,7 +16,6 @@
  */
 package org.apache.pdfbox.pdmodel.graphics.color;
 
-import org.apache.pdfbox.cos.COSBase;
 
 import java.awt.image.BufferedImage;
 import java.awt.image.WritableRaster;
@@ -34,6 +33,7 @@ public abstract class PDCIEBasedColorSpace extends PDColorSpace
     //
     // WARNING: this method is performance sensitive, modify with care!
     //
+    @Override
     public BufferedImage toRGBImage(WritableRaster raster) throws IOException
     {
         // This method calls toRGB to convert images one pixel at a time. For matrix-based
@@ -71,12 +71,6 @@ public abstract class PDCIEBasedColorSpace extends PDColorSpace
         }
 
         return rgbImage;
-    }
-
-    @Override
-    public COSBase getCOSObject()
-    {
-        return array;
     }
 
     @Override

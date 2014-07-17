@@ -47,7 +47,7 @@ import org.apache.pdfbox.persistence.util.COSObjectKey;
  * PDFParser and the COSStreamParser.
  *
  * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * 
+ * @version $Revision$
  */
 public abstract class BaseParser
 {
@@ -243,7 +243,7 @@ public abstract class BaseParser
             char r = (char)pdfSource.read();
             if( r != 'R' )
             {
-                throw new IOException( "expected='R' actual='" + r + "' " + pdfSource );
+                throw new IOException("expected='R' actual='" + r + "' at offset " + pdfSource.getOffset());
             }
             COSObjectKey key = new COSObjectKey(((COSInteger) number).intValue(),
                     ((COSInteger) generationNumber).intValue());
@@ -268,12 +268,12 @@ public abstract class BaseParser
         char c = (char)pdfSource.read();
         if( c != '<')
         {
-            throw new IOException( "expected='<' actual='" + c + "'" );
+            throw new IOException( "expected='<' actual='" + c + "' at offset " + pdfSource.getOffset());
         }
         c = (char)pdfSource.read();
         if( c != '<')
         {
-            throw new IOException( "expected='<' actual='" + c + "' " + pdfSource );
+            throw new IOException( "expected='<' actual='" + c + "' at offset " + pdfSource.getOffset());
         }
         skipSpaces();
         COSDictionary obj = new COSDictionary();
@@ -390,12 +390,12 @@ public abstract class BaseParser
         char ch = (char)pdfSource.read();
         if( ch != '>' )
         {
-            throw new IOException( "expected='>' actual='" + ch + "'" );
+            throw new IOException( "expected='>' actual='" + ch + "' at offset " + pdfSource.getOffset());
         }
         ch = (char)pdfSource.read();
         if( ch != '>' )
         {
-            throw new IOException( "expected='>' actual='" + ch + "'" );
+            throw new IOException( "expected='>' actual='" + ch + "' at offset " + pdfSource.getOffset());
         }
         return obj;
     }
@@ -421,7 +421,7 @@ public abstract class BaseParser
 
             if (!streamString.equals(STREAM_STRING))
             {
-                throw new IOException("expected='stream' actual='" + streamString + "'");
+                throw new IOException("expected='stream' actual='" + streamString + "' at offset " + pdfSource.getOffset());
             }
 
             //PDF Ref 3.2.7 A stream must be followed by either
@@ -491,7 +491,7 @@ public abstract class BaseParser
             {
                 // Couldn't determine length from dict: just
                 // scan until we find endstream:
-                readUntilEndStream( out );
+                readUntilEndStream( new EndstreamOutputStream(out) );
             }
             else
             {
@@ -550,11 +550,8 @@ public abstract class BaseParser
                         out.flush();
                         InputStream writtenStreamBytes = stream.getFilteredStream();
                         ByteArrayOutputStream bout = new ByteArrayOutputStream( length );
-                        
-                        while ( ( readCount = writtenStreamBytes.read( strmBuf ) ) >= 0 )
-                        {
-                            bout.write( strmBuf, 0, readCount );
-                        }
+
+                        IOUtils.copy(writtenStreamBytes, bout);
                         IOUtils.closeQuietly(writtenStreamBytes);
                         try
                         {
@@ -568,10 +565,10 @@ public abstract class BaseParser
                                                    PROP_PUSHBACK_SIZE, ioe );
                         }
                         // close and create new filtered stream
-                      	IOUtils.closeQuietly(out);
+                        IOUtils.closeQuietly(out);
                         out = stream.createFilteredStream( streamLength );
                         // scan until we find endstream:
-                        readUntilEndStream( out );
+                        readUntilEndStream( new EndstreamOutputStream(out) );
                     }
                 }
             }
@@ -609,11 +606,11 @@ public abstract class BaseParser
                      * If for some reason we get something else here, Read until we find the next
                      * "endstream"
                      */
-                    readUntilEndStream( out );
+                    readUntilEndStream( new EndstreamOutputStream(out) );
                     endStream = readString();
                     if( !endStream.equals( ENDSTREAM_STRING ) )
                     {
-                        throw new IOException("expected='endstream' actual='" + endStream + "' " + pdfSource);
+                        throw new IOException("expected='endstream' actual='" + endStream + "' at offset " + pdfSource.getOffset());
                     }
                 }
             }
@@ -735,6 +732,8 @@ public abstract class BaseParser
             }
             
         }  // while
+
+        out.flush(); // this writes a lonely CR or drops trailing CR LF and LF
     }
     
     /**
@@ -797,6 +796,7 @@ public abstract class BaseParser
         }
         return braces;
     }
+
     /**
      * This will parse a PDF string.
      *
@@ -804,11 +804,25 @@ public abstract class BaseParser
      * @return The parsed PDF string.
      *
      * @throws IOException If there is an error reading from the stream.
+     * @deprecated Not needed anymore. Use {@link #parseCOSString()} instead. PDFBOX-1437
      */
+    @Deprecated
     protected COSString parseCOSString(boolean isDictionary) throws IOException
     {
+        return parseCOSString();
+    }
+
+    /**
+     * This will parse a PDF string.
+     *
+     * @return The parsed PDF string.
+     *
+     * @throws IOException If there is an error reading from the stream.
+     */
+    protected COSString parseCOSString() throws IOException
+    {
         char nextChar = (char)pdfSource.read();
-        COSString retval = new COSString(isDictionary);
+        COSString retval = new COSString();
         char openBrace;
         char closeBrace;
         if( nextChar == '(' )
@@ -1047,7 +1061,7 @@ public abstract class BaseParser
         char ch = (char)pdfSource.read();
         if( ch != '[')
         {
-            throw new IOException( "expected='[' actual='" + ch + "'" );
+            throw new IOException( "expected='[' actual='" + ch + "' at offset " + pdfSource.getOffset());
         }
         COSArray po = new COSArray();
         COSBase pbo;
@@ -1086,7 +1100,7 @@ public abstract class BaseParser
             else
             {
                 //it could be a bad object in the array which is just skipped
-                LOG.warn("Corrupt object reference" );
+                LOG.warn("Corrupt object reference at offset " + pdfSource.getOffset());
 
                 // This could also be an "endobj" or "endstream" which means we can assume that
                 // the array has ended.
@@ -1130,7 +1144,7 @@ public abstract class BaseParser
         int c = pdfSource.read();
         if( (char)c != '/')
         {
-            throw new IOException("expected='/' actual='" + (char)c + "'-" + c + " " + pdfSource );
+            throw new IOException("expected='/' actual='" + (char)c + "'-" + c + " at offset " + pdfSource.getOffset());
         }
         // costruisce il nome
         StringBuilder buffer = new StringBuilder();
@@ -1203,7 +1217,7 @@ public abstract class BaseParser
             String trueString = new String( pdfSource.readFully( 4 ), "ISO-8859-1" );
             if( !trueString.equals( TRUE ) )
             {
-                throw new IOException( "Error parsing boolean: expected='true' actual='" + trueString + "'" );
+                throw new IOException( "Error parsing boolean: expected='true' actual='" + trueString + "' at offset " + pdfSource.getOffset());
             }
             else
             {
@@ -1215,7 +1229,7 @@ public abstract class BaseParser
             String falseString = new String( pdfSource.readFully( 5 ), "ISO-8859-1" );
             if( !falseString.equals( FALSE ) )
             {
-                throw new IOException( "Error parsing boolean: expected='true' actual='" + falseString + "'" );
+                throw new IOException( "Error parsing boolean: expected='true' actual='" + falseString + "' at offset " + pdfSource.getOffset());
             }
             else
             {
@@ -1224,7 +1238,7 @@ public abstract class BaseParser
         }
         else
         {
-            throw new IOException( "Error parsing boolean expected='t or f' actual='" + c + "'" );
+            throw new IOException( "Error parsing boolean expected='t or f' actual='" + c + "' at offset " + pdfSource.getOffset());
         }
         return retval;
     }
@@ -1258,7 +1272,7 @@ public abstract class BaseParser
             }
             else
             {
-                retval = parseCOSString(true);
+                retval = parseCOSString();
             }
             break;
         }
@@ -1268,7 +1282,7 @@ public abstract class BaseParser
             break;
         }
         case '(':
-            retval = parseCOSString(true);
+            retval = parseCOSString();
             break;
         case '/':   // name
             retval = parseCOSName();
@@ -1278,7 +1292,7 @@ public abstract class BaseParser
             String nullString = readString();
             if( !nullString.equals( NULL) )
             {
-                throw new IOException("Expected='null' actual='" + nullString + "'");
+                throw new IOException("Expected='null' actual='" + nullString + "' at offset " + pdfSource.getOffset());
             }
             retval = COSNull.NULL;
             break;
@@ -1608,27 +1622,29 @@ public abstract class BaseParser
      * This will read a long from the Stream and throw an {@link IllegalArgumentException} if the long value
      * has more than 10 digits (i.e. : bigger than {@link #OBJECT_NUMBER_THRESHOLD})
      * @return the object number being read.
-     * @throws IOException
+     * @throws IOException if an I/O error occurs
      */
     protected long readObjectNumber() throws IOException
     {
         long retval = readLong();
-        if(retval < 0 || retval >= OBJECT_NUMBER_THRESHOLD) {
+        if(retval < 0 || retval >= OBJECT_NUMBER_THRESHOLD)
+        {
             throw new IOException("Object Number '" + retval + "' has more than 10 digits or is negative");
         }
         return retval;
     }
-    
+
     /**
      * This will read a integer from the Stream and throw an {@link IllegalArgumentException} if the integer value
      * has more than the maximum object revision (i.e. : bigger than {@link #GENERATION_NUMBER_THRESHOLD})
      * @return the generation number being read.
-     * @throws IOException
+     * @throws IOException if an I/O error occurs
      */
     protected int readGenerationNumber() throws IOException
     {
         int retval = readInt();
-        if(retval < 0 || retval > GENERATION_NUMBER_THRESHOLD) {
+        if(retval < 0 || retval > GENERATION_NUMBER_THRESHOLD)
+        {
             throw new IOException("Generation Number '" + retval + "' has more than 5 digits");
         }
         return retval;
@@ -1682,14 +1698,16 @@ public abstract class BaseParser
         catch( NumberFormatException e )
         {
             pdfSource.unread(longBuffer.toString().getBytes("ISO-8859-1"));
-            throw new IOException( "Error: Expected a long type at offset "+pdfSource.getOffset());
+            throw new IOException( "Error: Expected a long type at offset "
+                    + pdfSource.getOffset() + ", instead got '" + longBuffer + "'");
         }
         return retval;
     }
 
     /**
-     * This method is used to read a token by the {@linkplain #readInt()} method and the {@linkplain #readLong()} method.
-     *  
+     * This method is used to read a token by the {@linkplain #readInt()} method
+     * and the {@linkplain #readLong()} method.
+     *
      * @return the token to parse as integer or long by the calling method.
      * @throws IOException throws by the {@link #pdfSource} methods.
      */
@@ -1701,6 +1719,7 @@ public abstract class BaseParser
                 lastByte != 10 &&
                 lastByte != 13 &&
                 lastByte != 60 && //see sourceforge bug 1714707
+                lastByte != '[' && // PDFBOX-1845
                 lastByte != 0 && //See sourceforge bug 853328
                 lastByte != -1 )
         {
@@ -1718,11 +1737,11 @@ public abstract class BaseParser
      */
     public void clearResources()
     {
-    	document = null;
-    	if (pdfSource != null)
-    	{
-    		IOUtils.closeQuietly(pdfSource);
-    		pdfSource = null;
-    	}
+        document = null;
+        if (pdfSource != null)
+        {
+            IOUtils.closeQuietly(pdfSource);
+            pdfSource = null;
+        }
     }
 }

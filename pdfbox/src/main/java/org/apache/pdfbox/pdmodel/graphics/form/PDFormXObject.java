@@ -22,12 +22,10 @@ import java.util.Map;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.pdfbox.cos.COSArray;
-import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSFloat;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSNumber;
-import org.apache.pdfbox.cos.COSStream;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
@@ -60,6 +58,8 @@ public final class PDFormXObject extends PDXObject
 
     // name of XObject in resources, to prevent recursion
     private String name;
+
+    private PDGroup group;
 
     /**
      * Creates a Form XObject for reading.
@@ -109,6 +109,23 @@ public final class PDFormXObject extends PDXObject
     }
 
     /**
+     * Returns the group attributes dictionary (Group XObject).
+     *
+     * @return the group attributes dictionary
+     */
+    public PDGroup getGroup() {
+        if( group == null ) 
+        {
+            COSDictionary dic = (COSDictionary) getCOSStream().getDictionaryObject(COSName.GROUP);
+            if( dic != null ) 
+            {
+                group = new PDGroup(dic);
+            }
+        }
+        return group;
+    }
+
+    /**
      * This will get the resources at this page and not look up the hierarchy.
      * This attribute is inheritable, and findResources() should probably used.
      * This will return null if no resources are available at this level.
@@ -121,24 +138,14 @@ public final class PDFormXObject extends PDXObject
         if (resources != null)
         {
             retval = new PDResources(resources);
-            // check for a recursion, see PDFBOX-1813
+            // check for a possible recursion
             if (name != null)
             {
                 Map<String, PDXObject> xobjects = retval.getXObjects();
                 if (xobjects != null && xobjects.containsKey(name))
                 {
-                    PDXObject xobject = xobjects.get(name);
-                    if (xobject instanceof PDFormXObject)
-                    {
-                        int length1 = getCOSStream().getInt(COSName.LENGTH);
-                        int length2 = xobject.getCOSStream().getInt(COSName.LENGTH);
-                        // seems to be the same object
-                        if (length1 == length2)
-                        {
-                            retval.removeXObject(name);
-                            LOG.debug("Removed XObjectForm "+name+" to avoid a recursion");
-                        }
-                    }
+                    retval.removeXObject(name);
+                    LOG.debug("Removed XObjectForm "+name+" to avoid a recursion");
                 }
             }
         }

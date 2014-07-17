@@ -17,13 +17,18 @@ package org.apache.pdfbox.pdmodel.graphics.image;
 
 import java.awt.Graphics;
 import java.awt.image.BufferedImage;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import javax.imageio.ImageIO;
 import junit.framework.TestCase;
+import static junit.framework.TestCase.assertTrue;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceGray;
 import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceRGB;
+
+import static org.apache.pdfbox.pdmodel.graphics.image.ValidateXImage.colorCount;
+import static org.apache.pdfbox.pdmodel.graphics.image.ValidateXImage.doWritePDF;
 import static org.apache.pdfbox.pdmodel.graphics.image.ValidateXImage.validate;
 
 /**
@@ -33,6 +38,15 @@ import static org.apache.pdfbox.pdmodel.graphics.image.ValidateXImage.validate;
  */
 public class JPEGFactoryTest extends TestCase
 {
+    private final File testResultsDir = new File("target/test-output/graphics");
+
+    @Override
+    protected void setUp() throws Exception
+    {
+        super.setUp();
+        testResultsDir.mkdirs();
+    }
+
     /**
      * Tests JPEGFactory#createFromStream(PDDocument document, InputStream
      * stream) with color JPEG file
@@ -42,9 +56,9 @@ public class JPEGFactoryTest extends TestCase
         PDDocument document = new PDDocument();
         InputStream stream = JPEGFactoryTest.class.getResourceAsStream("jpeg.jpg");
         PDImageXObject ximage = JPEGFactory.createFromStream(document, stream);
-        validate(ximage, 8, 344, 287, "jpg");
-        assertEquals(PDDeviceRGB.INSTANCE, ximage.getColorSpace());
-        document.close();
+        validate(ximage, 8, 344, 287, "jpg", PDDeviceRGB.INSTANCE.getName());
+
+        doWritePDF(document, ximage, testResultsDir, "jpegrgbstream.pdf");
     }
 
     /**
@@ -56,9 +70,9 @@ public class JPEGFactoryTest extends TestCase
         PDDocument document = new PDDocument();
         InputStream stream = JPEGFactoryTest.class.getResourceAsStream("jpeg256.jpg");
         PDImageXObject ximage = JPEGFactory.createFromStream(document, stream);
-        validate(ximage, 8, 344, 287, "jpg");
-        assertEquals(PDDeviceGray.INSTANCE, ximage.getColorSpace());
-        document.close();
+        validate(ximage, 8, 344, 287, "jpg", PDDeviceGray.INSTANCE.getName());
+
+        doWritePDF(document, ximage, testResultsDir, "jpeg256stream.pdf");
     }
 
     /**
@@ -71,9 +85,9 @@ public class JPEGFactoryTest extends TestCase
         BufferedImage image = ImageIO.read(JPEGFactoryTest.class.getResourceAsStream("jpeg.jpg"));
         assertEquals(3, image.getColorModel().getNumComponents());
         PDImageXObject ximage = JPEGFactory.createFromImage(document, image);
-        validate(ximage, 8, 344, 287, "jpg");
-        assertEquals(PDDeviceRGB.INSTANCE, ximage.getColorSpace());
-        document.close();
+        validate(ximage, 8, 344, 287, "jpg", PDDeviceRGB.INSTANCE.getName());
+
+        doWritePDF(document, ximage, testResultsDir, "jpegrgb.pdf");
     }
 
     /**
@@ -86,43 +100,90 @@ public class JPEGFactoryTest extends TestCase
         BufferedImage image = ImageIO.read(JPEGFactoryTest.class.getResourceAsStream("jpeg256.jpg"));
         assertEquals(1, image.getColorModel().getNumComponents());
         PDImageXObject ximage = JPEGFactory.createFromImage(document, image);
-        validate(ximage, 8, 344, 287, "jpg");
-        assertEquals(PDDeviceGray.INSTANCE, ximage.getColorSpace());
-        document.close();
+        validate(ximage, 8, 344, 287, "jpg", PDDeviceGray.INSTANCE.getName());
+
+        doWritePDF(document, ximage, testResultsDir, "jpeg256.pdf");
     }
 
     /**
      * Tests ARGB JPEGFactory#createFromImage(PDDocument document, BufferedImage
      * image)
      */
-    public void testCreateFromImageARGB() throws IOException
+    public void testCreateFromImageINT_ARGB() throws IOException
     {
+        // workaround Open JDK 6 bug
+        if (System.getProperty("java.runtime.name").equals("OpenJDK Runtime Environment") &&
+            System.getProperty("java.specification.version").equals("1.6"))
+        {
+            return;
+        }
+
         PDDocument document = new PDDocument();
         BufferedImage image = ImageIO.read(JPEGFactoryTest.class.getResourceAsStream("jpeg.jpg"));
 
         // create an ARGB image
-        int w = image.getWidth();
-        int h = image.getHeight();
-        BufferedImage argbImage = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        int width = image.getWidth();
+        int height = image.getHeight();
+        BufferedImage argbImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         Graphics ag = argbImage.getGraphics();
         ag.drawImage(image, 0, 0, null);
         ag.dispose();
 
-        // create a weird transparency triangle
-        for (int y = 0; y < h; ++y)
+        for (int x = 0; x < argbImage.getWidth(); ++x)
         {
-            for (int x = 0; x < Math.min(y, w); ++x)
+            for (int y = 0; y < argbImage.getHeight(); ++y)
             {
-                argbImage.setRGB(x, y, image.getRGB(x, y) & 0xFFFFFF | ((x * 255 / w) << 24));
+                argbImage.setRGB(x, y, (argbImage.getRGB(x, y) & 0xFFFFFF) | ((y / 10 * 10) << 24));
             }
         }
 
-        //TODO uncomment if ImageFactory.getAlphaImage() ever works
-//        PDImageXObject ximage = JPEGFactory.createFromImage(document, argbImage);
-//        validate(ximage, 8, 344, 287, "jpg");
-//        assertNotNull(ximage.getSoftMask());
-//        validate(ximage.getSoftMask(), 8, 344, 287, "jpg");
-        document.close();
+        PDImageXObject ximage = JPEGFactory.createFromImage(document, argbImage);
+        validate(ximage, 8, width, height, "jpg", PDDeviceRGB.INSTANCE.getName());
+        assertNotNull(ximage.getSoftMask());
+        validate(ximage.getSoftMask(), 8, width, height, "jpg", PDDeviceGray.INSTANCE.getName());
+        assertTrue(colorCount(ximage.getSoftMask().getImage()) > image.getHeight() / 10);
+        
+        doWritePDF(document, ximage, testResultsDir, "jpeg-intargb.pdf");
     }
 
+    /**
+     * Tests ARGB JPEGFactory#createFromImage(PDDocument document, BufferedImage
+     * image)
+     */
+    public void testCreateFromImage4BYTE_ABGR() throws IOException
+    {
+        // workaround Open JDK 6 bug
+        if (System.getProperty("java.runtime.name").equals("OpenJDK Runtime Environment") &&
+            System.getProperty("java.specification.version").equals("1.6"))
+        {
+            return;
+        }
+
+        PDDocument document = new PDDocument();
+        BufferedImage image = ImageIO.read(JPEGFactoryTest.class.getResourceAsStream("jpeg.jpg"));
+
+        // create an ARGB image
+        int width = image.getWidth();
+        int height = image.getHeight();
+        BufferedImage argbImage = new BufferedImage(width, height, BufferedImage.TYPE_4BYTE_ABGR);
+        Graphics ag = argbImage.getGraphics();
+        ag.drawImage(image, 0, 0, null);
+        ag.dispose();
+
+        for (int x = 0; x < argbImage.getWidth(); ++x)
+        {
+            for (int y = 0; y < argbImage.getHeight(); ++y)
+            {
+                argbImage.setRGB(x, y, (argbImage.getRGB(x, y) & 0xFFFFFF) | ((y / 10 * 10) << 24));
+            }
+        }
+
+        PDImageXObject ximage = JPEGFactory.createFromImage(document, argbImage);
+        validate(ximage, 8, width, height, "jpg", PDDeviceRGB.INSTANCE.getName());
+        assertNotNull(ximage.getSoftMask());
+        validate(ximage.getSoftMask(), 8, width, height, "jpg", PDDeviceGray.INSTANCE.getName());
+        assertTrue(colorCount(ximage.getSoftMask().getImage()) > image.getHeight() / 10);
+
+        doWritePDF(document, ximage, testResultsDir, "jpeg-4bargb.pdf");
+    }
 }

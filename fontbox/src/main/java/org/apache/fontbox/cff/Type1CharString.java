@@ -254,10 +254,15 @@ public class Type1CharString
         {
             // end
         }
-        else
+        else if (name != null)
         {
             // indicates a PDFBox bug
-            throw new IllegalArgumentException("Unknown command: " + name);
+            throw new IllegalArgumentException("Unhandled command: " + name);
+        }
+        else
+        {
+            // indicates an invalid charstring
+            LOG.warn("Unknown charstring command: " + command.getKey());
         }
         return null;
     }
@@ -333,7 +338,15 @@ public class Type1CharString
     {
         float x = (float)current.getX() + dx.floatValue();
         float y = (float)current.getY() + dy.floatValue();
-        path.lineTo(x, y);
+        if (path.getCurrentPoint() == null)
+        {
+            LOG.warn("rlineTo without initial moveTo in font " + fontName + ", glyph " + glyphName);
+            path.moveTo(x, y);
+        }
+        else
+        {
+            path.lineTo(x, y);
+        }
         current.setLocation(x, y);
     }
 
@@ -349,7 +362,15 @@ public class Type1CharString
         float y2 = y1 + dy2.floatValue();
         float x3 = x2 + dx3.floatValue();
         float y3 = y2 + dy3.floatValue();
-        path.curveTo(x1, y1, x2, y2, x3, y3);
+        if (path.getCurrentPoint() == null)
+        {
+            LOG.warn("rrcurveTo without initial moveTo in font " + fontName + ", glyph " + glyphName);
+            path.moveTo(x3, y3);
+        }
+        else
+        {
+            path.curveTo(x1, y1, x2, y2, x3, y3);
+        }
         current.setLocation(x3, y3);
     }
 
@@ -358,7 +379,14 @@ public class Type1CharString
      */
     private void closepath()
     {
-        path.closePath();
+        if (path.getCurrentPoint() == null)
+        {
+            LOG.warn("closepath without initial moveTo in font " + fontName + ", glyph " + glyphName);
+        }
+        else
+        {
+            path.closePath();
+        }
         path.moveTo(current.getX(), current.getY());
     }
 

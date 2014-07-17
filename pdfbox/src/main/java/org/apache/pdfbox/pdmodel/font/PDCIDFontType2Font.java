@@ -31,17 +31,12 @@ import org.apache.pdfbox.io.IOUtils;
 import org.apache.pdfbox.pdmodel.common.PDStream;
 
 /**
- * This is implementation of the CIDFontType2 Font.
+ * A Type2 CIDFont (TrueType).
  * 
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * 
+ * @author Ben Litchfield
  */
 public class PDCIDFontType2Font extends PDCIDFont
 {
-
-    /**
-     * Log instance.
-     */
     private static final Log LOG = LogFactory.getLog(PDCIDFontType2Font.class);
 
     private Boolean hasCIDToGIDMap = null;
@@ -50,51 +45,12 @@ public class PDCIDFontType2Font extends PDCIDFont
 
     /**
      * Constructor.
-     */
-    public PDCIDFontType2Font()
-    {
-        super();
-        font.setItem(COSName.SUBTYPE, COSName.CID_FONT_TYPE2);
-    }
-
-    /**
-     * Constructor.
      * 
      * @param fontDictionary The font dictionary according to the PDF specification.
      */
-    public PDCIDFontType2Font(COSDictionary fontDictionary)
+    public PDCIDFontType2Font(COSDictionary fontDictionary, PDType0Font parent)
     {
-        super(fontDictionary);
-    }
-
-    /**
-     * read the CIDToGID map.
-     */
-    private void readCIDToGIDMapping()
-    {
-        COSBase map = font.getDictionaryObject(COSName.CID_TO_GID_MAP);
-        if (map instanceof COSStream)
-        {
-            COSStream stream = (COSStream) map;
-            try
-            {
-                InputStream is = stream.getUnfilteredStream();
-                byte[] mapAsBytes = IOUtils.toByteArray(is);
-                IOUtils.closeQuietly(is);
-                int numberOfInts = mapAsBytes.length / 2;
-                cid2gid = new int[numberOfInts];
-                int offset = 0;
-                for (int index = 0; index < numberOfInts; index++)
-                {
-                    cid2gid[index] = getCodeFromArray(mapAsBytes, offset, 2);
-                    offset += 2;
-                }
-            }
-            catch (IOException exception)
-            {
-                LOG.error("Can't read the CIDToGIDMap", exception);
-            }
-        }
+        super(fontDictionary, parent);
     }
 
     /**
@@ -106,7 +62,7 @@ public class PDCIDFontType2Font extends PDCIDFont
     {
         if (hasCIDToGIDMap == null)
         {
-            COSBase map = font.getDictionaryObject(COSName.CID_TO_GID_MAP);
+            COSBase map = dict.getDictionaryObject(COSName.CID_TO_GID_MAP);
             if (map != null && map instanceof COSStream)
             {
                 hasCIDToGIDMap = Boolean.TRUE;
@@ -116,7 +72,7 @@ public class PDCIDFontType2Font extends PDCIDFont
                 hasCIDToGIDMap = Boolean.FALSE;
             }
         }
-        return hasCIDToGIDMap.booleanValue();
+        return hasCIDToGIDMap;
     }
 
     /**
@@ -128,7 +84,7 @@ public class PDCIDFontType2Font extends PDCIDFont
     {
         if (hasIdentityCIDToGIDMap == null)
         {
-            COSBase map = font.getDictionaryObject(COSName.CID_TO_GID_MAP);
+            COSBase map = dict.getDictionaryObject(COSName.CID_TO_GID_MAP);
             if (map != null && map instanceof COSName)
             {
                 hasIdentityCIDToGIDMap = Boolean.TRUE;
@@ -138,7 +94,7 @@ public class PDCIDFontType2Font extends PDCIDFont
                 hasIdentityCIDToGIDMap = Boolean.FALSE;
             }
         }
-        return hasIdentityCIDToGIDMap.booleanValue();
+        return hasIdentityCIDToGIDMap;
     }
 
     /**
@@ -185,9 +141,36 @@ public class PDCIDFontType2Font extends PDCIDFont
         return cid2gid;
     }
 
+    private void readCIDToGIDMapping()
+    {
+        COSBase map = dict.getDictionaryObject(COSName.CID_TO_GID_MAP);
+        if (map instanceof COSStream)
+        {
+            COSStream stream = (COSStream) map;
+            try
+            {
+                InputStream is = stream.getUnfilteredStream();
+                byte[] mapAsBytes = IOUtils.toByteArray(is);
+                IOUtils.closeQuietly(is);
+                int numberOfInts = mapAsBytes.length / 2;
+                cid2gid = new int[numberOfInts];
+                int offset = 0;
+                for (int index = 0; index < numberOfInts; index++)
+                {
+                    cid2gid[index] = getCodeFromArray(mapAsBytes, offset, 2);
+                    offset += 2;
+                }
+            }
+            catch (IOException exception)
+            {
+                LOG.error("Can't read the CIDToGIDMap", exception);
+            }
+        }
+    }
+
     /**
      * Returns the embedded true type font.
-     * 
+     *
      * @return the true type font
      * @throws IOException exception if something went wrong
      */
@@ -204,4 +187,23 @@ public class PDCIDFontType2Font extends PDCIDFont
         return trueTypeFont;
     }
 
+    @Override
+    public float getFontWidth(byte[] c, int offset, int length) throws IOException
+    {
+        // a suitable mapping is needed to address the correct width value
+        int code = getCodeFromArray(c, offset, length);
+        if (hasIdentityCIDToGIDMap() || hasCIDToGIDMap())
+        {
+            return getFontWidth(code);
+        }
+        else if (getParent().getCMap() != null)
+        {
+            String mappedString = getParent().getCMap().lookup(code, length);
+            if (mappedString != null)
+            {
+                return getFontWidth(mappedString.codePointAt(0));
+            }
+        }
+        return super.getFontWidth(c, offset, length);
+    }
 }

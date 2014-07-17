@@ -70,17 +70,17 @@
             <dependency>
                 <groupId>org.bouncycastle</groupId>
                 <artifactId>bcprov-jdk15on</artifactId>
-                <version>1.49</version>
+                <version>1.50</version>
             </dependency>
             <dependency>
                 <groupId>org.bouncycastle</groupId>
                 <artifactId>bcmail-jdk15on</artifactId>
-                <version>1.49</version>
+                <version>1.50</version>
             </dependency>
             <dependency>
-                <groupId>com.ibm.icu</groupId>
-                <artifactId>icu4j</artifactId>
-                <version>53.1</version>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcpkix-jdk15on</artifactId>
+                <version>1.50</version>
             </dependency>
             <dependency>
                 <groupId>log4j</groupId>
@@ -262,13 +262,6 @@
             </roles>
         </developer>
         <developer>
-            <id>leleueri</id>
-            <name>Eric Leleu</name>
-            <roles>
-                <role>PMC Member</role>
-            </roles>
-        </developer>
-        <developer>
             <id>gbailleul</id>
             <name>Guillaume Bailleul</name>
             <roles>
@@ -292,13 +285,6 @@
         <developer>
             <id>jahewson</id>
             <name>John Hewson</name>
-            <roles>
-                <role>PMC Member</role>
-            </roles>
-        </developer>
-        <developer>
-            <id>jukka</id>
-            <name>Jukka Zitting</name>
             <roles>
                 <role>PMC Member</role>
             </roles>
@@ -350,6 +336,20 @@
             <name>Villu Ruusmann</name>
             <roles>
                 <role>PMC Member</role>
+            </roles>
+        </developer>
+        <developer>
+            <id>leleueri</id>
+            <name>Eric Leleu</name>
+            <roles>
+                <role>Emeritus PMC Member</role>
+            </roles>
+        </developer>
+        <developer>
+            <id>jukka</id>
+            <name>Jukka Zitting</name>
+            <roles>
+                <role>Emeritus PMC Member</role>
             </roles>
         </developer>
     </developers>

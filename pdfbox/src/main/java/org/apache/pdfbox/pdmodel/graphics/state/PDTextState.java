@@ -119,7 +119,7 @@ public class PDTextState implements Cloneable
      *
      * @return The horizontalScaling.
      */
-    public float getHorizontalScalingPercent()
+    public float getHorizontalScaling()
     {
         return horizontalScaling;
     }
@@ -129,7 +129,7 @@ public class PDTextState implements Cloneable
      *
      * @param value The horizontalScaling.
      */
-    public void setHorizontalScalingPercent(float value)
+    public void setHorizontalScaling(float value)
     {
         horizontalScaling = value;
     }
@@ -254,19 +254,17 @@ public class PDTextState implements Cloneable
         knockout = value;
     }
 
-    /**
-     * {@inheritDoc}
-     */
-    public Object clone()
+    @Override
+    public PDTextState clone()
     {
         try
         {
-            return super.clone();
+            return (PDTextState)super.clone();
         }
-        catch (CloneNotSupportedException ignore)
+        catch (CloneNotSupportedException e)
         {
-            //ignore
+            // should not happen
+            throw new RuntimeException(e);
         }
-        return null;
     }
 }

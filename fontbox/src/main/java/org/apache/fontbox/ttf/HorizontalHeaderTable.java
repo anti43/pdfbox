@@ -22,7 +22,6 @@ import java.io.IOException;
  * A table in a true type font.
  * 
  * @author Ben Litchfield (ben@benlitchfield.com)
- * @version $Revision: 1.1 $
  */
 public class HorizontalHeaderTable extends TTFTable
 {
@@ -56,7 +55,7 @@ public class HorizontalHeaderTable extends TTFTable
      * @param data The stream to read the data from.
      * @throws IOException If there is an error reading the data.
      */
-    public void initData( TrueTypeFont ttf, TTFDataStream data ) throws IOException
+    public void read(TrueTypeFont ttf, TTFDataStream data) throws IOException
     {
         version = data.read32Fixed();
         ascender = data.readSignedShort();
@@ -75,6 +74,7 @@ public class HorizontalHeaderTable extends TTFTable
         reserved5 = data.readSignedShort();
         metricDataFormat = data.readSignedShort();
         numberOfHMetrics = data.readUnsignedShort();
+        initialized = true;
     }
     
     /**

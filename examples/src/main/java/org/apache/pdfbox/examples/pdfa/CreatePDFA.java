@@ -16,6 +16,8 @@
  */
 package org.apache.pdfbox.examples.pdfa;
 
+import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 
 import org.apache.jempbox.xmp.XMPMetadata;
@@ -28,6 +30,8 @@ import org.apache.pdfbox.pdmodel.edit.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDTrueTypeFont;
 import org.apache.pdfbox.pdmodel.graphics.color.PDOutputIntent;
+
+import javax.xml.transform.TransformerException;
 
 /**
  * This is an example that creates a simple PDF/A document.
@@ -58,7 +62,8 @@ public class CreatePDFA
      *
      * @throws Exception If something bad occurs
      */
-    public void doIt( String file, String message) throws Exception
+    public void doIt( final String file, final String message, final String fontfile)
+            throws IOException, TransformerException
     {
         // the document
         PDDocument doc = null;
@@ -69,9 +74,8 @@ public class CreatePDFA
             PDPage page = new PDPage();
             doc.addPage( page );
 
-            // load the font from pdfbox.jar
-            InputStream fontStream = CreatePDFA.class.getResourceAsStream("/org/apache/pdfbox/resources/ttf/ArialMT.ttf");
-            PDFont font = PDTrueTypeFont.loadTTF(doc, fontStream);
+            // load the font as this needs to be embedded as part of PDF/A
+            PDFont font = PDTrueTypeFont.loadTTF(doc, new File(fontfile));
             
             // create a page with the message where needed
             PDPageContentStream contentStream = new PDPageContentStream(doc, page);
@@ -94,8 +98,9 @@ public class CreatePDFA
             pdfaid.setConformance("B");
             pdfaid.setPart(1);
             pdfaid.setAbout("");
-            metadata.importXMPMetadata(xmp);
-    
+            
+            metadata.importXMPMetadata( xmp.asByteArray() );
+            
             InputStream colorProfile = CreatePDFA.class.getResourceAsStream("/org/apache/pdfbox/resources/pdfa/sRGB Color Space Profile.icm");
             // create output intent
             PDOutputIntent oi = new PDOutputIntent(doc, colorProfile); 
@@ -124,23 +129,16 @@ public class CreatePDFA
      *
      * @param args Command line arguments.
      */
-    public static void main(String[] args)
+    public static void main(String[] args) throws IOException, TransformerException
     {
         CreatePDFA app = new CreatePDFA();
-        try
+        if( args.length != 3 )
         {
-            if( args.length != 2 )
-            {
-                app.usage();
-            }
-            else
-            {
-                app.doIt( args[0], args[1] );
-            }
+            app.usage();
         }
-        catch (Exception e)
+        else
         {
-            e.printStackTrace();
+            app.doIt( args[0], args[1], args[2] );
         }
     }
 
@@ -149,6 +147,6 @@ public class CreatePDFA
      */
     private void usage()
     {
-        System.err.println( "usage: " + this.getClass().getName() + " <output-file> <Message>" );
+        System.err.println( "usage: " + this.getClass().getName() + " <output-file> <Message> <ttf-file>" );
     }
 }

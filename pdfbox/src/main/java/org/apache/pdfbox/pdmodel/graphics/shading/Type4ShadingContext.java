@@ -51,7 +51,7 @@ class Type4ShadingContext extends GouraudShadingContext
      * @param ctm current transformation matrix
      * @param pageHeight height of the current page
      */
-    public Type4ShadingContext(PDShadingType4 shading, ColorModel cm, AffineTransform xform,
+    Type4ShadingContext(PDShadingType4 shading, ColorModel cm, AffineTransform xform,
                                Matrix ctm, int pageHeight) throws IOException
     {
         super(shading, cm, xform, ctm, pageHeight);
@@ -63,9 +63,8 @@ class Type4ShadingContext extends GouraudShadingContext
         bitsPerColorComponent = shading.getBitsPerComponent();
         LOG.debug("bitsPerColorComponent: " + bitsPerColorComponent);
         bitsPerCoordinate = shading.getBitsPerCoordinate();
-        LOG.debug(Math.pow(2, bitsPerCoordinate) - 1);
-        long maxSrcCoord = (int) Math.pow(2, bitsPerCoordinate) - 1;
-        long maxSrcColor = (int) Math.pow(2, bitsPerColorComponent) - 1;
+        long maxSrcCoord = (long) (Math.pow(2, bitsPerCoordinate) - 1);
+        long maxSrcColor = (long) (Math.pow(2, bitsPerColorComponent) - 1);
         LOG.debug("maxSrcCoord: " + maxSrcCoord);
         LOG.debug("maxSrcColor: " + maxSrcColor);
 
@@ -106,7 +105,7 @@ class Type4ShadingContext extends GouraudShadingContext
         //TODO missing: BBox, AntiAlias (p. 305 in 1.7 spec)
         // p318:
         //  reading in sequence from higher-order to lower-order bit positions
-        ImageInputStream mciis = new MemoryCacheImageInputStream(cosStream.getFilteredStream());
+        ImageInputStream mciis = new MemoryCacheImageInputStream(cosStream.getUnfilteredStream());
         while (true)
         {
             try

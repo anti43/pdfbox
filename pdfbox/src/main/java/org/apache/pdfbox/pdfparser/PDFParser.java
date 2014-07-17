@@ -244,6 +244,10 @@ public class PDFParser extends BaseParser
             {
                 document.dereferenceObjectStreams();
             }
+            else
+            {
+                LOG.info("Document is encrypted");
+            }
             ConflictObj.resolveConflicts(document, conflictList);
         }
         catch( IOException e )
@@ -303,7 +307,7 @@ public class PDFParser extends BaseParser
         }
     }
 
-    private void parseHeader() throws IOException
+    protected void parseHeader() throws IOException
     {
         // read first line
         String header = readLine();
@@ -538,8 +542,8 @@ public class PDFParser extends BaseParser
         else
         {
             long number = -1;
-            int genNum = -1;
-            String objectKey = null;
+            int genNum;
+            String objectKey;
             boolean missingObjectNumber = false;
             try
             {
@@ -741,6 +745,10 @@ public class PDFParser extends BaseParser
         {
             long currObjID = readObjectNumber(); // first obj id
             long count = readLong(); // the number of objects in the xref table
+            if (count == 0)
+            {
+                LOG.warn("Count in xref table is 0 at offset " + pdfSource.getOffset());
+            }
             skipSpaces();
             for(int i = 0; i < count; i++)
             {
@@ -754,7 +762,7 @@ public class PDFParser extends BaseParser
                 }
                 //Ignore table contents
                 String currentLine = readLine();
-                String[] splitString = currentLine.split(" ");
+                String[] splitString = currentLine.split("\\s");
                 if (splitString.length < 3)
                 {
                     LOG.warn("invalid xref line: " + currentLine);
@@ -847,7 +855,7 @@ public class PDFParser extends BaseParser
      *
      * @param parsedTrailer the parsed catalog in the trailer
      */
-    private void readVersionInTrailer(COSDictionary parsedTrailer)
+    protected void readVersionInTrailer(COSDictionary parsedTrailer)
     {
         COSObject root = (COSObject) parsedTrailer.getItem(COSName.ROOT);
         if (root != null)
@@ -892,11 +900,11 @@ public class PDFParser extends BaseParser
     private static class ConflictObj
     {
 
-        private long offset;
-        private COSObjectKey objectKey;
-        private COSObject object;
+        private final long offset;
+        private final COSObjectKey objectKey;
+        private final COSObject object;
 
-        public ConflictObj(long offsetValue, COSObjectKey key, COSObject pdfObject)
+        ConflictObj(long offsetValue, COSObjectKey key, COSObject pdfObject)
         {
             this.offset = offsetValue;
             this.objectKey = key;
@@ -925,8 +933,7 @@ public class PDFParser extends BaseParser
                 do
                 {
                     ConflictObj o = conflicts.next();
-                    Long offset = new Long(o.offset);
-                    if (tolerantConflicResolver(values, offset, 4))
+                    if (tolerantConflicResolver(values, o.offset, 4))
                     {
                         COSObject pdfObject = document.getObjectFromPool(o.objectKey);
                         if (pdfObject.getObjectNumber() != null 
@@ -936,7 +943,7 @@ public class PDFParser extends BaseParser
                         }
                         else
                         {
-                            LOG.debug("Conflict object ["+o.objectKey+"] at offset "+offset
+                            LOG.debug("Conflict object [" + o.objectKey + "] at offset " + o.offset
                                     +" found in the xref table, but the object numbers differ. Ignoring this object."
                                     + " The document is maybe malformed.");
                         }

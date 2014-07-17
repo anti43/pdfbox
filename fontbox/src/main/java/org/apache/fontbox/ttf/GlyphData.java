@@ -16,6 +16,7 @@
  */
 package org.apache.fontbox.ttf;
 
+import java.awt.geom.GeneralPath;
 import java.io.IOException;
 
 import org.apache.fontbox.util.BoundingBox;
@@ -24,7 +25,6 @@ import org.apache.fontbox.util.BoundingBox;
  * A glyph data record in the glyf table.
  * 
  * @author Ben Litchfield (ben@benlitchfield.com)
- * @version $Revision: 1.1 $
  */
 public class GlyphData
 {
@@ -39,11 +39,11 @@ public class GlyphData
     /**
      * This will read the required data from the stream.
      * 
-     * @param ttf The font that is being read.
+     * @param glyphTable The glyph table this glyph belongs to.
      * @param data The stream to read the data from.
      * @throws IOException If there is an error reading the data.
      */
-    public void initData( TrueTypeFont ttf, TTFDataStream data ) throws IOException
+    public void initData( GlyphTable glyphTable, TTFDataStream data ) throws IOException
     {
         numberOfContours = data.readSignedShort();
         xMin = data.readSignedShort();
@@ -60,7 +60,7 @@ public class GlyphData
         else 
         {
             // create a composite glyph
-            glyphDescription = new GlyfCompositeDescript(data, ttf.getGlyph());
+            glyphDescription = new GlyfCompositeDescript(data, glyphTable);
         }
     }
     
@@ -71,6 +71,7 @@ public class GlyphData
     {
         return boundingBox;
     }
+
     /**
      * @param boundingBoxValue The boundingBox to set.
      */
@@ -78,6 +79,7 @@ public class GlyphData
     {
         this.boundingBox = boundingBoxValue;
     }
+
     /**
      * @return Returns the numberOfContours.
      */
@@ -85,6 +87,7 @@ public class GlyphData
     {
         return numberOfContours;
     }
+
     /**
      * @param numberOfContoursValue The numberOfContours to set.
      */
@@ -101,7 +104,16 @@ public class GlyphData
     {
         return glyphDescription;
     }
-    
+
+    /**
+     * Returns the path of the glyph.
+     * @return the path
+     */
+    public GeneralPath getPath()
+    {
+        return new GlyphRenderer(glyphDescription).getPath();
+    }
+
     /**
      * Returns the xMax value.
      * @return the XMax value
@@ -137,5 +149,4 @@ public class GlyphData
     {
         return yMin;
     }
-
 }

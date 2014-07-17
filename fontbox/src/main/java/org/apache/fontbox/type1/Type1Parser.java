@@ -96,13 +96,14 @@ final class Type1Parser
         // font dict
         int length = read(Token.INTEGER).intValue();
         read(Token.NAME, "dict");
+        readMaybe(Token.NAME, "dup"); // found in some TeX fonts
         read(Token.NAME, "begin");
 
         for (int i = 0; i < length; i++)
         {
             // premature end
             if (lexer.peekToken().getKind() == Token.NAME &&
-                    lexer.peekToken().getText().equals("currentdict"))
+                lexer.peekToken().getText().equals("currentdict"))
             {
                 break;
             }
@@ -139,8 +140,12 @@ final class Type1Parser
                     readMaybe(Token.NAME, "array");
 
                     // 0 1 255 {1 index exch /.notdef put } for
+                    // we have to check "readonly" and "def" too 
+                    // as some fonts don't provide any dup-values, see PDFBOX-2134 
                     while (!(lexer.peekToken().getKind() == Token.NAME &&
-                            lexer.peekToken().getText().equals("dup")))
+                            (lexer.peekToken().getText().equals("dup") ||
+                             lexer.peekToken().getText().equals("readonly") ||
+                             lexer.peekToken().getText().equals("def"))))
                     {
                         lexer.nextToken();
                     }
@@ -296,9 +301,14 @@ final class Type1Parser
 
         for (int i = 0; i < length; i++)
         {
+            if (lexer.peekToken().getKind() == Token.NAME &&
+               !lexer.peekToken().getText().equals("end"))
+            {
+                read(Token.NAME);
+            }
             // premature end
             if (lexer.peekToken().getKind() == Token.NAME &&
-                    lexer.peekToken().getText().equals("end"))
+                lexer.peekToken().getText().equals("end"))
             {
                 break;
             }
@@ -449,7 +459,7 @@ final class Type1Parser
         readMaybe(Token.NAME, "dup");
         read(Token.NAME, "begin");
 
-        int levIV = 4; // number of random bytes at start of charstring
+        int lenIV = 4; // number of random bytes at start of charstring
 
         for (int i = 0; i < length; i++)
         {
@@ -464,11 +474,15 @@ final class Type1Parser
 
             if (key.equals("Subrs"))
             {
-                readSubrs(levIV);
+                readSubrs(lenIV);
             }
-            else if (key.equals("levIV"))
+            else if (key.equals("OtherSubrs"))
             {
-                levIV = readDictValue().get(0).intValue();
+                readOtherSubrs();
+            }
+            else if (key.equals("lenIV"))
+            {
+                lenIV = readDictValue().get(0).intValue();
             }
             else if (key.equals("ND"))
             {
@@ -483,7 +497,7 @@ final class Type1Parser
             {
                 read(Token.START_PROC);
                 read(Token.NAME, "noaccess");
-                read(Token.NAME, "put");
+                read(Token.NAME);
                 read(Token.END_PROC);
                 read(Token.NAME, "executeonly");
                 read(Token.NAME, "def");
@@ -498,14 +512,14 @@ final class Type1Parser
         // sometimes followed by "put". Either way, we just skip until
         // the /CharStrings dict is found
         while (!(lexer.peekToken().getKind() == Token.LITERAL &&
-                lexer.peekToken().getText().equals("CharStrings")))
+                 lexer.peekToken().getText().equals("CharStrings")))
         {
             lexer.nextToken();
         }
 
         // CharStrings dict
         read(Token.LITERAL, "CharStrings");
-        readCharStrings(levIV);
+        readCharStrings(lenIV);
     }
 
     /**
@@ -539,7 +553,7 @@ final class Type1Parser
         }
         else if (key.equals("BlueFuzz"))
         {
-            font.blueScale = value.get(0).intValue();
+            font.blueFuzz = value.get(0).intValue();
         }
         else if (key.equals("StdHW"))
         {
@@ -580,7 +594,7 @@ final class Type1Parser
         {
             // premature end
             if (!(lexer.peekToken().getKind() == Token.NAME &&
-                    lexer.peekToken().getText().equals("dup")))
+                  lexer.peekToken().getText().equals("dup")))
             {
                 break;
             }
@@ -597,6 +611,30 @@ final class Type1Parser
         readDef();
     }
 
+    // OtherSubrs are embedded PostScript procedures which we can safely ignore
+    private void readOtherSubrs() throws IOException
+    {
+        if (lexer.peekToken().getKind() == Token.START_ARRAY)
+        {
+            readValue();
+            readDef();
+        }
+        else
+        {
+            int length = read(Token.INTEGER).intValue();
+            read(Token.NAME, "array");
+
+            for (int i = 0; i < length; i++)
+            {
+                read(Token.NAME, "dup");
+                read(Token.INTEGER); // index
+                readValue(); // PostScript
+                readPut();
+            }
+            readDef();
+        }
+    }
+
     /**
      * Reads the /CharStrings dictionary.
      * @param lenIV The number of random bytes used in charstring encryption.
@@ -610,6 +648,12 @@ final class Type1Parser
 
         for (int i = 0; i < length; i++)
         {
+            // premature end
+            if (lexer.peekToken().getKind() == Token.NAME &&
+                lexer.peekToken().getText().equals("end"))
+            {
+                break;
+            }
             // key/value
             String name = read(Token.LITERAL).getText();
 
@@ -636,11 +680,13 @@ final class Type1Parser
         {
             return;
         }
-        else if (token.getText().equals("noaccess")) {
+        else if (token.getText().equals("noaccess"))
+        {
             token = read(Token.NAME);
         }
 
-        if (token.getText().equals("def")) {
+        if (token.getText().equals("def"))
+        {
             return;
         }
         throw new IOException("Found " + token + " but expected ND");

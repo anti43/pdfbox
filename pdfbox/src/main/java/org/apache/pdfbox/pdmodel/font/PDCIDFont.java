@@ -33,45 +33,44 @@ import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.util.ResourceLoader;
 
 /**
- * This is implementation for the CIDFontType0/CIDFontType2 Fonts.
+ * A CIDFont.
  *
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * 
+ * @author Ben Litchfield
  */
-public abstract class PDCIDFont extends PDSimpleFont
+public abstract class PDCIDFont extends PDFont
 {
-    /**
-     * Log instance.
-     */
     private static final Log LOG = LogFactory.getLog(PDCIDFont.class);
 
-    private Map<Integer, Float> widthCache = null;
-    private long defaultWidth = 0;
-
-    /**
-     * Constructor.
-     */
-    public PDCIDFont()
-    {
-        super();
-    }
+    private PDType0Font parent;
+    private Map<Integer, Float> widthCache;
+    private long defaultWidth;
 
     /**
      * Constructor.
      *
      * @param fontDictionary The font dictionary according to the PDF specification.
      */
-    public PDCIDFont(COSDictionary fontDictionary)
+    protected PDCIDFont(COSDictionary fontDictionary, PDType0Font parent)
     {
         super(fontDictionary);
+        this.parent = parent;
         extractWidths();
+    }
+
+    /**
+     * Returns the Type 0 font which is the parent of this font.
+     *
+     * @return parent Type 0 font
+     */
+    public final PDType0Font getParent()
+    {
+        return parent;
     }
 
     /**
      * This will get the fonts bounding box.
      *
      * @return The fonts bounding box.
-     *
      * @throws IOException If there is an error getting the font bounding box.
      */
     @Override
@@ -89,7 +88,7 @@ public abstract class PDCIDFont extends PDSimpleFont
     {
         if (defaultWidth == 0)
         {
-            COSNumber number = (COSNumber) font.getDictionaryObject(COSName.DW);
+            COSNumber number = (COSNumber) dict.getDictionaryObject(COSName.DW);
             if (number != null)
             {
                 defaultWidth = number.intValue();
@@ -103,38 +102,24 @@ public abstract class PDCIDFont extends PDSimpleFont
     }
 
     /**
-     * This will set the default width for the glyphs of this font.
-     *
-     * @param dw The default width.
-     */
-    public void setDefaultWidth(long dw)
-    {
-        defaultWidth = dw;
-        font.setLong(COSName.DW, dw);
-    }
-
-    /**
      * This will get the font width for a character.
      *
      * @param c The character code to get the width for.
      * @param offset The offset into the array.
      * @param length The length of the data.
-     *
      * @return The width is in 1000 unit of text space, ie 333 or 777
-     *
      * @throws IOException If an error occurs while parsing.
      */
     @Override
     public float getFontWidth(byte[] c, int offset, int length) throws IOException
     {
-
         float retval = getDefaultWidth();
         int code = getCodeFromArray(c, offset, length);
 
         Float widthFloat = widthCache.get(code);
         if (widthFloat != null)
         {
-            retval = widthFloat.floatValue();
+            retval = widthFloat;
         }
         return retval;
     }
@@ -144,7 +129,7 @@ public abstract class PDCIDFont extends PDSimpleFont
         if (widthCache == null)
         {
             widthCache = new HashMap<Integer, Float>();
-            COSArray widths = (COSArray) font.getDictionaryObject(COSName.W);
+            COSArray widths = (COSArray) dict.getDictionaryObject(COSName.W);
             if (widths != null)
             {
                 int size = widths.size();
@@ -235,7 +220,7 @@ public abstract class PDCIDFont extends PDSimpleFont
     {
         float totalWidths = 0.0f;
         float characterCount = 0.0f;
-        COSArray widths = (COSArray) font.getDictionaryObject(COSName.W);
+        COSArray widths = (COSArray) dict.getDictionaryObject(COSName.W);
 
         if (widths != null)
         {
@@ -273,9 +258,6 @@ public abstract class PDCIDFont extends PDSimpleFont
         return average;
     }
 
-    /**
-     * {@inheritDoc}
-     */
     @Override
     public float getFontWidth(int charCode)
     {
@@ -294,76 +276,80 @@ public abstract class PDCIDFont extends PDSimpleFont
     private String getCIDSystemInfo()
     {
         String cidSystemInfo = null;
-        COSDictionary cidsysteminfo = (COSDictionary) font.getDictionaryObject(COSName.CIDSYSTEMINFO);
-        if (cidsysteminfo != null)
+        COSDictionary dict = (COSDictionary) this.dict.getDictionaryObject(COSName.CIDSYSTEMINFO);
+        if (dict != null)
         {
-            String ordering = cidsysteminfo.getString(COSName.ORDERING);
-            String registry = cidsysteminfo.getString(COSName.REGISTRY);
-            int supplement = cidsysteminfo.getInt(COSName.SUPPLEMENT);
+            String ordering = dict.getString(COSName.ORDERING);
+            String registry = dict.getString(COSName.REGISTRY);
+            int supplement = dict.getInt(COSName.SUPPLEMENT);
             cidSystemInfo = registry + "-" + ordering + "-" + supplement;
         }
         return cidSystemInfo;
     }
 
+    // todo: do we want to do this at all? Isn't the parent Type0 font responsible for this?
     @Override
     protected void determineEncoding()
     {
         String cidSystemInfo = getCIDSystemInfo();
-        if (cidSystemInfo != null)
+        if (cidSystemInfo == null)
         {
-            if (cidSystemInfo.contains("Identity"))
-            {
-                cidSystemInfo = "Identity-H";
-            }
-            else if (cidSystemInfo.startsWith("Adobe-UCS-"))
-            {
-                cidSystemInfo = "Adobe-Identity-UCS";
-            }
-            else
-            {
-                cidSystemInfo = cidSystemInfo.substring(0, cidSystemInfo.lastIndexOf("-")) + "-UCS2";
-            }
-            cmap = cmapObjects.get(cidSystemInfo);
-            if (cmap == null)
-            {
-            	InputStream cmapStream = null;
-                try
-                {
-                    // look for a predefined CMap with the given name
-                    cmapStream = ResourceLoader.loadResource(resourceRootCMAP + cidSystemInfo);
-                    if (cmapStream != null)
-                    {
-                    	cmap = parseCmap(resourceRootCMAP, cmapStream);
-                    	if (cmap == null)
-                    	{
-                    		LOG.error("Error: Could not parse predefined CMAP file for '" + cidSystemInfo + "'");
-                    	}
-                    }
-                    else
-                    {
-                		LOG.debug("Debug: '" + cidSystemInfo + "' isn't a predefined CMap, most likely it's embedded in the pdf itself.");
-                    }
-                }
-                catch (IOException exception)
-                {
-                    LOG.error("Error: Could not find predefined CMAP file for '" + cidSystemInfo + "'");
-                }
-                finally
-                {
-                	IOUtils.closeQuietly(cmapStream);
-                }
-            }
+            // todo: CIDSystemInfo is required, so this is an error (perform recovery?)
+            LOG.error("Missing CIDSystemInfo in CIDFont dictionary");
+            return;
+        }
+
+        if (cidSystemInfo.contains("Identity"))
+        {
+            cidSystemInfo = "Identity-H";
+        }
+        else if (cidSystemInfo.startsWith("Adobe-UCS-"))
+        {
+            cidSystemInfo = "Adobe-Identity-UCS";
         }
         else
         {
-            super.determineEncoding();
+            cidSystemInfo = cidSystemInfo.substring(0, cidSystemInfo.lastIndexOf('-')) + "-UCS2";
+        }
+
+        cmap = cmapObjects.get(cidSystemInfo);
+        if (cmap == null)
+        {
+            InputStream cmapStream = null;
+            try
+            {
+                // look for a predefined CMap with the given name
+                cmapStream = ResourceLoader.loadResource(resourceRootCMAP + cidSystemInfo);
+                if (cmapStream != null)
+                {
+                    cmap = parseCmap(resourceRootCMAP, cmapStream);
+                    if (cmap == null)
+                    {
+                        LOG.error("Could not parse predefined CMAP file for '" +
+                                cidSystemInfo + "'");
+                    }
+                }
+                else
+                {
+                    LOG.debug("'" + cidSystemInfo + "' isn't a predefined CMap, most " +
+                              "likely it's embedded in the pdf itself.");
+                }
+            }
+            catch (IOException exception)
+            {
+                LOG.error("Could not find predefined CMAP file for '" + cidSystemInfo + "'");
+            }
+            finally
+            {
+                IOUtils.closeQuietly(cmapStream);
+            }
         }
     }
 
     @Override
     public String encode(byte[] c, int offset, int length) throws IOException
     {
-        String result = null;
+        String result;
         if (cmap != null)
         {
             result = cmapEncoding(getCodeFromArray(c, offset, length), length, true, cmap);
@@ -373,5 +359,16 @@ public abstract class PDCIDFont extends PDSimpleFont
             result = super.encode(c, offset, length);
         }
         return result;
+    }
+    
+    @Override
+    public void clear()
+    {
+        super.clear();
+        if (widthCache != null)
+        {
+            widthCache.clear();
+            widthCache = null;
+        }
     }
 }

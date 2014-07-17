@@ -16,9 +16,11 @@
  */
 package org.apache.fontbox.cff;
 
+import java.awt.geom.Rectangle2D;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
@@ -26,6 +28,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.fontbox.afm.CharMetric;
+import org.apache.fontbox.afm.FontMetric;
 import org.apache.fontbox.cff.CFFFont.Mapping;
 import org.apache.fontbox.cff.charset.CFFCharset;
 import org.apache.fontbox.cff.charset.CFFExpertCharset;
@@ -34,6 +38,7 @@ import org.apache.fontbox.cff.charset.CFFISOAdobeCharset;
 import org.apache.fontbox.cff.encoding.CFFEncoding;
 import org.apache.fontbox.cff.encoding.CFFExpertEncoding;
 import org.apache.fontbox.cff.encoding.CFFStandardEncoding;
+import org.apache.fontbox.util.BoundingBox;
 
 /**
  * This class represents a parser for a CFF font. 
@@ -42,7 +47,6 @@ import org.apache.fontbox.cff.encoding.CFFStandardEncoding;
  */
 public class CFFParser
 {
-
     private static final String TAG_OTTO = "OTTO";
     private static final String TAG_TTCF = "ttcf";
     private static final String TAG_TTFONLY = "\u0000\u0001\u0000\u0000";
@@ -119,6 +123,7 @@ public class CFFParser
         {
             CFFFont font = parseFont(i);
             font.setGlobalSubrIndex(globalSubrIndex);
+            createFontMetrics(font);
             fonts.add(font);
         }
         return fonts;
@@ -127,7 +132,7 @@ public class CFFParser
     private static String readTagName(CFFDataInput input) throws IOException
     {
         byte[] b = input.readBytes(4);
-        return new String(b);
+        return new String(b, "ISO-8859-1");
     }
 
     private static long readLong(CFFDataInput input) throws IOException
@@ -503,12 +508,13 @@ public class CFFParser
                 int localSubrOffset = (Integer) getNumber(privateDict, "Subrs", Integer.valueOf(0));
                 if (localSubrOffset == 0)
                 {
-                    font.setLocalSubrIndex(new IndexData(0));
+                    privDict.put("Subrs", new IndexData(0));
                 }
                 else
                 {
                     input.setPosition(privateOffset + localSubrOffset);
-                    font.setLocalSubrIndex(readIndexData(input));
+                    IndexData idx = readIndexData(input);
+                    privDict.put("Subrs", idx);
                 }
 
                 privateDictionaries.add(privDict);
@@ -559,15 +565,16 @@ public class CFFParser
             int localSubrOffset = (Integer) getNumber(privateDict, "Subrs", Integer.valueOf(0));
             if (localSubrOffset == 0)
             {
-                font.setLocalSubrIndex(new IndexData(0));
+                //font.setLocalSubrIndex(new IndexData(0));
+                font.addValueToPrivateDict("Subrs", new IndexData(0));
             }
             else
             {
                 input.setPosition(privateOffset + localSubrOffset);
-                font.setLocalSubrIndex(readIndexData(input));
+                //font.setLocalSubrIndex(readIndexData(input));
+                font.addValueToPrivateDict("Subrs", readIndexData(input));
             }
         }
-
         return font;
     }
 
@@ -702,7 +709,7 @@ public class CFFParser
      * @param dataInput
      * @param nGlyphs
      * @param ros
-     * @return
+     * @return the FDSelect data
      * @throws IOException
      */
     private CIDKeyedFDSelect readFDSelect(CFFDataInput dataInput, int nGlyphs, CFFFontROS ros) throws IOException
@@ -728,7 +735,7 @@ public class CFFParser
      * @param format
      * @param nGlyphs
      * @param ros
-     * @return
+     * @return the Format 0 of the FDSelect data
      * @throws IOException
      */
     private Format0FDSelect readFormat0FDSelect(CFFDataInput dataInput, int format, int nGlyphs, CFFFontROS ros)
@@ -752,7 +759,7 @@ public class CFFParser
      * @param format
      * @param nGlyphs
      * @param ros
-     * @return
+     * @return the Format 3 of the FDSelect data
      * @throws IOException
      */
     private Format3FDSelect readFormat3FDSelect(CFFDataInput dataInput, int format, int nGlyphs, CFFFontROS ros)
@@ -1285,4 +1292,75 @@ public class CFFParser
             }
         }
     }
+
+    private void createFontMetrics(CFFFont font) throws IOException
+    {
+        FontMetric fontMetrics = new FontMetric();
+        fontMetrics.setAFMVersion(2.0f);
+        fontMetrics.setFontName( font.getName() );
+        fontMetrics.setFullName( font.getPropertyAsString("FullName") );
+        fontMetrics.setFamilyName( font.getPropertyAsString("FamilyName") );
+        fontMetrics.setWeight( font.getPropertyAsString("Weight") );
+        CFFEncoding encoding = font.getEncoding();
+        if (encoding.isFontSpecific())
+        {
+            fontMetrics.setEncodingScheme("FontSpecific");
+        }
+        fontMetrics.setUnderlinePosition(font.getPropertyAsFloat("UnderlinePosition", -100));
+        fontMetrics.setUnderlineThickness(font.getPropertyAsFloat("UnderlineThickness", 50));
+        fontMetrics.setItalicAngle(font.getPropertyAsFloat("ItalicAngle", 0));
+        fontMetrics.setFixedPitch(font.getPropertyAsBoolean("isFixedPitch",false) );
+        
+        List<CharMetricSortable> metrics = createCharMetrics(font);
+        Collections.sort(metrics);
+        BoundingBox bounds = null;
+        for (CharMetric metric : metrics)
+        {
+            fontMetrics.addCharMetric(metric);
+            if(bounds == null)
+            {
+                bounds = metric.getBoundingBox();
+            }
+            else
+            {
+                BoundingBox.union(bounds, metric.getBoundingBox(), bounds);
+            }
+        }
+        fontMetrics.setFontBBox(bounds);
+        font.setFontMetric(fontMetrics);
+    }
+
+    private List<CharMetricSortable> createCharMetrics(CFFFont font) throws IOException
+    {
+        List<CharMetricSortable> metrics = new ArrayList<CharMetricSortable>();
+        Collection<CFFFont.Mapping> mappings = font.getMappings();
+        for (CFFFont.Mapping mapping : mappings)
+        {
+            CharMetricSortable metric = new CharMetricSortable();
+            metric.setCharacterCode(mapping.getCode());
+            metric.setName(mapping.getName());
+            metric.setWx(mapping.getType1CharString().getWidth());
+            metric.setBBox(mapping.getType1CharString().getBounds());
+            metrics.add(metric);
+        }
+        return metrics;
+    }
+
+    /**
+     * This class represents the metric of one single character. 
+     */
+    private static class CharMetricSortable extends CharMetric implements Comparable<CharMetric>
+    {
+        public int compareTo(CharMetric that)
+        {
+            return getCharacterCode() - that.getCharacterCode();
+        }
+        
+        public void setBBox(Rectangle2D rect)
+        {
+            BoundingBox bBox = new BoundingBox((float)rect.getMinX(), (float)rect.getMinY(), (float)rect.getMaxX(), (float)rect.getMaxY());
+            setBoundingBox(bBox);
+        }
+    }
+
 }

@@ -22,7 +22,6 @@ import java.io.IOException;
  * A table in a true type font.
  * 
  * @author Ben Litchfield (ben@benlitchfield.com)
- * @version $Revision: 1.1 $
  */
 public class MaximumProfileTable extends TTFTable
 {
@@ -265,7 +264,7 @@ public class MaximumProfileTable extends TTFTable
      * @param data The stream to read the data from.
      * @throws IOException If there is an error reading the data.
      */
-    public void initData( TrueTypeFont ttf, TTFDataStream data ) throws IOException
+    public void read(TrueTypeFont ttf, TTFDataStream data) throws IOException
     {
         version = data.read32Fixed();
         numGlyphs = data.readUnsignedShort();
@@ -282,5 +281,6 @@ public class MaximumProfileTable extends TTFTable
         maxSizeOfInstructions = data.readUnsignedShort();
         maxComponentElements = data.readUnsignedShort();
         maxComponentDepth = data.readUnsignedShort();
+        initialized = true;
     }
 }

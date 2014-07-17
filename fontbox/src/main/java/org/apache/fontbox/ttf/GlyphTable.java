@@ -40,34 +40,37 @@ public class GlyphTable extends TTFTable
      * @param data The stream to read the data from.
      * @throws IOException If there is an error reading the data.
      */
-    public void initData(TrueTypeFont ttf, TTFDataStream data) throws IOException
+    public void read(TrueTypeFont ttf, TTFDataStream data) throws IOException
     {
-        MaximumProfileTable maxp = ttf.getMaximumProfile();
         IndexToLocationTable loc = ttf.getIndexToLocation();
         // the glyph offsets
         long[] offsets = loc.getOffsets();
         // number of glyphs
-        int numGlyphs = maxp.getNumGlyphs();
+        int numGlyphs = ttf.getNumberOfGlyphs();
         // the end of the glyph table
-        long endOfGlyphs = offsets[numGlyphs];
+        // should not be 0, but sometimes is, see PDFBOX-2044
+        // structure of this table: see
+        // https://developer.apple.com/fonts/TTRefMan/RM06/Chap6loca.html
+        long endOfGlyphs = offsets[numGlyphs]; 
         long offset = getOffset();
         glyphs = new GlyphData[numGlyphs];
         for (int i = 0; i < numGlyphs; i++)
         {
             // end of glyphs reached?
-            if (endOfGlyphs == offsets[i])
+            if (endOfGlyphs != 0 &&
+                    endOfGlyphs == offsets[i]) 
             {
                 break;
             }
             // the current glyph isn't defined
-            // if the next offset equals the current index
-            if (offsets[i] == offsets[i + 1])
+            // if the next offset is equal or smaller to the current offset
+            if (offsets[i + 1] <= offsets[i])
             {
                 continue;
             }
             glyphs[i] = new GlyphData();
             data.seek(offset + offsets[i]);
-            glyphs[i].initData(ttf, data);
+            glyphs[i].initData(this, data);
         }
         for (int i = 0; i < numGlyphs; i++)
         {
@@ -78,6 +81,7 @@ public class GlyphTable extends TTFTable
                 glyph.getDescription().resolve();
             }
         }
+        initialized = true;
     }
 
     /**

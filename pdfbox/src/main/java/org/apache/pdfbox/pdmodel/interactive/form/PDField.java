@@ -317,7 +317,7 @@ public abstract class PDField implements COSObjectable
         Integer ff = fdfField.getFieldFlags();
         if (ff != null)
         {
-            setFieldFlags(ff.intValue());
+            setFieldFlags(ff);
         }
         else
         {
@@ -326,7 +326,7 @@ public abstract class PDField implements COSObjectable
 
             if (setFf != null)
             {
-                int setFfInt = setFf.intValue();
+                int setFfInt = setFf;
                 fieldFlags = fieldFlags | setFfInt;
                 setFieldFlags(fieldFlags);
             }
@@ -342,7 +342,7 @@ public abstract class PDField implements COSObjectable
                 // clrFf = 1101
                 // clrFfValue = 0010;
                 // newValue = 1011 & 0010 which is 0010
-                int clrFfValue = clrFf.intValue();
+                int clrFfValue = clrFf;
                 clrFfValue ^= 0xFFFFFFFF;
                 fieldFlags = fieldFlags & clrFfValue;
                 setFieldFlags(fieldFlags);
@@ -356,7 +356,7 @@ public abstract class PDField implements COSObjectable
             Integer f = fdfField.getWidgetFieldFlags();
             if (f != null && widget != null)
             {
-                widget.setAnnotationFlags(f.intValue());
+                widget.setAnnotationFlags(f);
             }
             else
             {
@@ -364,7 +364,7 @@ public abstract class PDField implements COSObjectable
                 Integer setF = fdfField.getSetWidgetFieldFlags();
                 if (setF != null)
                 {
-                    annotFlags = annotFlags | setF.intValue();
+                    annotFlags = annotFlags | setF;
                     widget.setAnnotationFlags(annotFlags);
                 }
 
@@ -379,7 +379,7 @@ public abstract class PDField implements COSObjectable
                     // clrF = 1101
                     // clrFValue = 0010;
                     // newValue = 1011 & 0010 which is 0010
-                    int clrFValue = clrF.intValue();
+                    int clrFValue = clrF;
                     clrFValue ^= 0xFFFFFFFFL;
                     annotFlags = annotFlags & clrFValue;
                     widget.setAnnotationFlags(annotFlags);
@@ -392,9 +392,9 @@ public abstract class PDField implements COSObjectable
         {
             FDFField fdfChild = fdfKids.get(i);
             String fdfName = fdfChild.getPartialFieldName();
-            for (int j = 0; j < pdKids.size(); j++)
+            for (COSObjectable pdKid : pdKids)
             {
-                Object pdChildObj = pdKids.get(j);
+                Object pdChildObj = pdKid;
                 if (pdChildObj instanceof PDField)
                 {
                     PDField pdChild = (PDField) pdChildObj;
@@ -534,7 +534,11 @@ public abstract class PDField implements COSObjectable
                 if (kidDictionary.getDictionaryObject(COSName.FT) != null
                         || (parent != null && parent.getDictionaryObject(COSName.FT) != null))
                 {
-                    kidsList.add(PDFieldFactory.createField(form, kidDictionary));
+                    PDField field = PDFieldFactory.createField(form, kidDictionary);
+                    if (field != null)
+                    {
+                        kidsList.add(field);
+                    }
                 }
                 else if ("Widget".equals(kidDictionary.getNameAsString(COSName.SUBTYPE)))
                 {
@@ -542,8 +546,11 @@ public abstract class PDField implements COSObjectable
                 }
                 else
                 {
-                    //
-                    kidsList.add(PDFieldFactory.createField(form, kidDictionary));
+                    PDField field = PDFieldFactory.createField(form, kidDictionary);
+                    if (field != null)
+                    {
+                        kidsList.add(field);
+                    }
                 }
             }
             retval = new COSArrayList<COSObjectable>(kidsList, kids);

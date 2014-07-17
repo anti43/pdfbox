@@ -33,7 +33,7 @@ import org.apache.pdfbox.util.Matrix;
  * AWT Paint for radial shading.
  * @author Andreas Lehmkühler
  */
-class RadialShadingPaint implements Paint
+public class RadialShadingPaint implements Paint
 {
     private static final Log LOG = LogFactory.getLog(RadialShadingPaint.class);
 
@@ -47,7 +47,7 @@ class RadialShadingPaint implements Paint
      * @param ctm current transformation matrix
      * @param pageHeight size of the current page
      */
-    public RadialShadingPaint(PDShadingType3 shading, Matrix ctm, int pageHeight)
+    RadialShadingPaint(PDShadingType3 shading, Matrix ctm, int pageHeight)
     {
         this.shading = shading;
         this.ctm = ctm;

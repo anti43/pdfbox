@@ -17,8 +17,16 @@
 package org.apache.fontbox.cff;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
+import org.apache.fontbox.afm.FontMetric;
 import org.apache.fontbox.cff.charset.CFFCharset;
 import org.apache.fontbox.cff.encoding.CFFEncoding;
 import org.apache.fontbox.type1.Type1CharStringReader;
@@ -39,9 +47,9 @@ public class CFFFont implements Type1CharStringReader
     private CFFCharset fontCharset = null;
     private Map<String, byte[]> charStringsDict = new LinkedHashMap<String, byte[]>();
     private IndexData globalSubrIndex = null;
-    private IndexData localSubrIndex = null;
     private Map<String, Type2CharString> charStringCache = new HashMap<String, Type2CharString>();
-
+    private FontMetric fontMetric = null;
+    
     /**
      * The name of the font.
      * 
@@ -81,6 +89,54 @@ public class CFFFont implements Type1CharStringReader
             return privateDictValue;
         }
         return null;
+    }
+
+    /**
+     * Returns the string value for the given name from the dictionary.
+     * 
+     * @param name the name of the value
+     * @return the string value of the name if available
+     */
+    public String getPropertyAsString(String name)
+    {
+        Object value = getProperty(name);
+        if (value != null && value instanceof String)
+        {
+            return (String)value;
+        }
+        return null;
+    }
+
+    /**
+     * Returns the float value for the given name from the dictionary.
+     * 
+     * @param name the name of the value
+     * @return the float value of the name if available
+     */
+    public float getPropertyAsFloat(String name, float defaultValue)
+    {
+        Object value = getProperty(name);
+        if (value != null && value instanceof Float)
+        {
+            return (Float)value;
+        }
+        return defaultValue;
+    }
+
+    /**
+     * Returns the boolean value for the given name from the dictionary.
+     * 
+     * @param name the name of the value
+     * @return the boolean value of the name if available
+     */
+    public boolean getPropertyAsBoolean(String name, boolean defaultValue)
+    {
+        Object value = getProperty(name);
+        if (value != null && value instanceof Boolean)
+        {
+            return (Boolean)value;
+        }
+        return defaultValue;
     }
 
     /**
@@ -144,7 +200,7 @@ public class CFFFont implements Type1CharStringReader
     /**
      * Get the mapping (code/SID/charname/bytes) for this font.
      * 
-     * @return mappings for codes < 256 and for codes > = 256
+     * @return mappings for codes &lt; 256 and for codes &gt;= 256
      */
     public Collection<CFFFont.Mapping> getMappings()
     {
@@ -308,6 +364,26 @@ public class CFFFont implements Type1CharStringReader
     }
 
     /**
+     * Returns the FontMetric of the font.
+     * 
+     * @return the font metrics
+     */
+    public FontMetric getFontMetric()
+    {
+        return fontMetric;
+    }
+
+    /**
+     * Sets the FontMetric of the font.
+     * 
+     * @param metric the given FontMetric 
+     */
+    public void setFontMetric(FontMetric metric)
+    {
+        fontMetric = metric;
+    }
+
+    /**
      * Returns the SID for a given glyph name.
      * @param name glyph name
      * @return SID
@@ -354,8 +430,8 @@ public class CFFFont implements Type1CharStringReader
         Type2CharString type2 = charStringCache.get(name);
         if (type2 == null)
         {
-            Type2CharStringParser parser = new Type2CharStringParser();
-            List<Object> type2seq = parser.parse(charStringsDict.get(name), globalSubrIndex, localSubrIndex);
+            Type2CharStringParser parser = new Type2CharStringParser(fontname, name);
+            List<Object> type2seq = parser.parse(charStringsDict.get(name), globalSubrIndex, getLocalSubrIndex(sid));
             type2 = new Type2CharString(this, fontname, name, type2seq, getDefaultWidthX(sid), getNominalWidthX(sid));
             charStringCache.put(name, type2);
         }
@@ -429,24 +505,11 @@ public class CFFFont implements Type1CharStringReader
      * 
      * @return the dictionary
      */
-    public IndexData getLocalSubrIndex()
+    protected IndexData getLocalSubrIndex(int sid)
     {
-        return localSubrIndex;
+        return (IndexData)privateDict.get("Subrs");
     }
 
-    /**
-     * Sets the local subroutine index data.
-     * 
-     * @param localSubrIndexValue the IndexData object containing the local subroutines
-     */
-    public void setLocalSubrIndex(IndexData localSubrIndexValue)
-    {
-        localSubrIndex = localSubrIndexValue;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
     public class Mapping implements Type1Mapping
     {
         private int mappedCode;

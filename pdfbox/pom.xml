@@ -43,11 +43,6 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.apache.pdfbox</groupId>
-            <artifactId>jempbox</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
             <groupId>commons-logging</groupId>
             <artifactId>commons-logging</artifactId>
         </dependency>
@@ -59,11 +54,6 @@
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk15on</artifactId>
-            <optional>true</optional>
-        </dependency>
-        <dependency>
-            <groupId>com.ibm.icu</groupId>
-            <artifactId>icu4j</artifactId>
             <optional>true</optional>
         </dependency>
         <dependency>
@@ -153,6 +143,7 @@
                         <exclude>src/main/resources/org/apache/pdfbox/resources/afm/*</exclude>
                         <exclude>src/main/resources/org/apache/pdfbox/resources/cmap/*</exclude>
                         <exclude>src/main/resources/org/apache/pdfbox/resources/icc/*</exclude>
+                        <exclude>src/main/resources/META-INF/services/*</exclude>
                         <exclude>src/test/resources/input/rendering/*.ai</exclude>
                         <exclude>src/test/resources/output/*</exclude>
                         <exclude>release.properties</exclude>

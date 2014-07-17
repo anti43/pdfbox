@@ -34,10 +34,12 @@ import org.apache.pdfbox.rendering.PageDrawer;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.graphics.color.PDColor;
 import org.apache.pdfbox.pdmodel.graphics.color.PDColorSpace;
+import org.apache.pdfbox.rendering.TilingPatternDrawer;
 import org.apache.pdfbox.util.Matrix;
 
 /**
  * AWT Paint for a tiling pattern, which consists of a small repeating graphical figure.
+ *
  * @author Andreas Lehmkühler
  * @author John Hewson
  */
@@ -124,17 +126,17 @@ public class TilingPaint extends TexturePaint
         else
         {
             // undo translation
-            matrix = (Matrix)pattern.getMatrix().clone();
+            matrix = pattern.getMatrix().clone();
             matrix.setValue(2, 0, matrix.getValue(2, 0) - (float)rect.getX()); // tx
             matrix.setValue(2, 1, matrix.getValue(2, 1) - (float)rect.getY()); // ty
         }
 
-        PageDrawer drawer = new PageDrawer(renderer);
+        // TODO: need to make it easy to use a custom TilingPatternDrawer
+        PageDrawer drawer = new TilingPatternDrawer(renderer);
         PDRectangle pdRect = new PDRectangle(0, 0, width, height);
 
         Graphics2D graphics = image.createGraphics();
         drawer.drawTilingPattern(graphics, pattern, pdRect, matrix, colorSpace, color);
-        drawer.dispose();
         graphics.dispose();
 
         return image;

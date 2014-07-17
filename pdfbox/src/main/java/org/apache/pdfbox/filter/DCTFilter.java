@@ -23,7 +23,6 @@ import java.awt.image.WritableRaster;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Iterator;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -47,25 +46,10 @@ final class DCTFilter extends Filter
     private static final Log LOG = LogFactory.getLog(DCTFilter.class);
 
     @Override
-    protected final DecodeResult decode(InputStream encoded, OutputStream decoded,
-                                         COSDictionary parameters) throws IOException
+    public final DecodeResult decode(InputStream encoded, OutputStream decoded,
+                                         COSDictionary parameters, int index) throws IOException
     {
-        // find suitable image reader
-        Iterator readers = ImageIO.getImageReadersByFormatName("JPEG");
-        ImageReader reader = null;
-        while(readers.hasNext()) {
-            reader = (ImageReader)readers.next();
-            if(reader.canReadRaster()) {
-                break;
-            }
-        }
-
-        if (reader == null)
-        {
-            throw new MissingImageReaderException("Cannot read JPEG image: " +
-                    "a suitable JAI I/O image filter is not installed");
-        }
-
+        ImageReader reader = findImageReader("JPEG", "a suitable JAI I/O image filter is not installed");
         ImageInputStream iis = null;
         try
         {

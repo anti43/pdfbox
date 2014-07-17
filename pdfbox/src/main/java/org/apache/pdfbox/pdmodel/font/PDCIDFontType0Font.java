@@ -21,40 +21,26 @@ import java.io.IOException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.pdfbox.cos.COSDictionary;
-import org.apache.pdfbox.cos.COSName;
 
 /**
- * This is implementation of the CIDFontType0 Font.
+ * A Type0 CIDFont (CFF).
  * 
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * 
+ * @author Ben Litchfield
  */
 public class PDCIDFontType0Font extends PDCIDFont
 {
-    /**
-     * Log instance.
-     */
     private static final Log LOG = LogFactory.getLog(PDCIDFontType0Font.class);
 
-    private PDType1CFont type1CFont = null;
-
-    /**
-     * Constructor.
-     */
-    public PDCIDFontType0Font()
-    {
-        super();
-        font.setItem(COSName.SUBTYPE, COSName.CID_FONT_TYPE0);
-    }
+    private PDType1CFont type1CFont;
 
     /**
      * Constructor.
      * 
      * @param fontDictionary The font dictionary according to the PDF specification.
      */
-    public PDCIDFontType0Font(COSDictionary fontDictionary)
+    public PDCIDFontType0Font(COSDictionary fontDictionary, PDType0Font parent)
     {
-        super(fontDictionary);
+        super(fontDictionary, parent);
         PDFontDescriptor fd = getFontDescriptor();
         if (fd instanceof PDFontDescriptorDictionary)
         {
@@ -63,7 +49,7 @@ public class PDCIDFontType0Font extends PDCIDFont
             {
                 try
                 {
-                    type1CFont = new PDType1CFont(font);
+                    type1CFont = new PDType1CFont(dict);
                 }
                 catch (IOException exception)
                 {
@@ -81,5 +67,16 @@ public class PDCIDFontType0Font extends PDCIDFont
     public PDType1CFont getType1CFont()
     {
         return type1CFont;
+    }
+    
+    @Override
+    public void clear()
+    {
+        super.clear();
+        if (type1CFont != null)
+        {
+            type1CFont.clear();
+            type1CFont = null;
+        }
     }
 }

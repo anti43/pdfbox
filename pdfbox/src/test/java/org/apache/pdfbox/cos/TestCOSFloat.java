@@ -73,9 +73,9 @@ public class TestCOSFloat extends TestCOSNumber
             assertTrue(test2.equals(test3));
             assertTrue(test1.equals(test3));
             // Non-nullity
-            assertFalse(test1.equals(null));
-            assertFalse(test2.equals(null));
-            assertFalse(test3.equals(null));
+            assertFalse(test1 == null);
+            assertFalse(test2 == null);
+            assertFalse(test3 == null);
             
             float nf = Float.intBitsToFloat(Float.floatToIntBits(num)+1);
             COSFloat test4 = new COSFloat(nf);
@@ -215,7 +215,7 @@ public class TestCOSFloat extends TestCOSNumber
     private String removeTrailingNull(String value)
     {
         // remove fraction digit "0" only
-        if (value.indexOf(".") > -1 && !value.endsWith(".0"))
+        if (value.indexOf('.') > -1 && !value.endsWith(".0"))
         {
             while (value.endsWith("0") && !value.endsWith(".0"))
             {

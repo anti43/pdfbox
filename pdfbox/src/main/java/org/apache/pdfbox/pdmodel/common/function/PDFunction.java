@@ -82,6 +82,7 @@ public abstract class PDFunction implements COSObjectable
      *
      * {@inheritDoc}
      */
+    @Override
     public COSBase getCOSObject()
     {
         if (functionStream != null)
@@ -129,6 +130,11 @@ public abstract class PDFunction implements COSObjectable
      */
     public static PDFunction create( COSBase function ) throws IOException
     {
+        if (function == COSName.IDENTITY)
+        {
+            return new PDFunctionTypeIdentity(null);
+        }
+
         PDFunction retval = null;
         if( function instanceof COSObject )
         {
@@ -310,7 +316,7 @@ public abstract class PDFunction implements COSObjectable
     protected float[] clipToRange(float[] inputValues) 
     {
         COSArray rangesArray = getRangeValues();
-        float[] result = null;
+        float[] result;
         if (rangesArray != null) 
         {
             float[] rangeValues = rangesArray.toFloatArray();
@@ -318,7 +324,8 @@ public abstract class PDFunction implements COSObjectable
             result = new float[numberOfRanges];
             for (int i=0; i<numberOfRanges; i++)
             {
-                result[i] = clipToRange(inputValues[i], rangeValues[2*i], rangeValues[2*i+1]);
+                int index = i << 1;
+                result[i] = clipToRange(inputValues[i], rangeValues[index], rangeValues[index + 1]);
             }
         }
         else
@@ -339,7 +346,15 @@ public abstract class PDFunction implements COSObjectable
      */
     protected float clipToRange(float x, float rangeMin, float rangeMax) 
     {
-        return Math.min(Math.max(x, rangeMin), rangeMax);
+        if (x < rangeMin)
+        {
+            return rangeMin;
+        }
+        else if (x > rangeMax)
+        {
+            return rangeMax;
+        }
+        return x;
     }
 
     /**
@@ -362,6 +377,7 @@ public abstract class PDFunction implements COSObjectable
     /**
      * {@inheritDoc}
      */
+    @Override
     public String toString()
     {
         return "FunctionType" + getFunctionType();

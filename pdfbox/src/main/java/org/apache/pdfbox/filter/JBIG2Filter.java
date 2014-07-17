@@ -53,25 +53,10 @@ final class JBIG2Filter extends Filter
     private static final Log LOG = LogFactory.getLog(JBIG2Filter.class);
 
     @Override
-    protected final DecodeResult decode(InputStream encoded, OutputStream decoded,
-                                         COSDictionary parameters) throws IOException
+    public final DecodeResult decode(InputStream encoded, OutputStream decoded,
+                                         COSDictionary parameters, int index) throws IOException
     {
-        // find suitable image reader
-        Iterator readers = ImageIO.getImageReadersByFormatName("JBIG2");
-        ImageReader reader = null;
-        while(readers.hasNext()) {
-            reader = (ImageReader)readers.next();
-            if(reader.canReadRaster()) {
-                break;
-            }
-        }
-
-        if (reader == null)
-        {
-            throw new MissingImageReaderException("Cannot read JBIG2 image: " +
-                    "jbig2-imageio is not installed");
-        }
-
+        ImageReader reader = findImageReader("JBIG2", "jbig2-imageio is not installed");
         DecodeResult result = new DecodeResult(new COSDictionary());
         result.getParameters().addAll(parameters);
 

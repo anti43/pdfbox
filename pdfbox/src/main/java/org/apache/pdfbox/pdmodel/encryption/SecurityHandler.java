@@ -82,11 +82,14 @@ public abstract class SecurityHandler
     /** The RC4 implementation used for cryptographic functions. */
     protected RC4Cipher rc4 = new RC4Cipher();
 
+    /** indicates if the Metadata have to be decrypted of not */ 
+    protected boolean decryptMetadata; 
+    
     private final Set<COSBase> objects = new HashSet<COSBase>();
     private final Set<COSDictionary> potentialSignatures = new HashSet<COSDictionary>();
 
     private boolean useAES;
-
+    
     /**
      * The access permission granted to the current user for the document. These
      * permissions are computed during decryption and are in read only mode.
@@ -413,6 +416,10 @@ public abstract class SecurityHandler
      */
     public void decryptStream(COSStream stream, long objNum, long genNum) throws IOException
     {
+        if (!decryptMetadata && COSName.METADATA.equals(stream.getCOSName(COSName.TYPE)))
+        {
+            return;
+        }
         decryptDictionary(stream, objNum, genNum);
         InputStream encryptedStream = stream.getFilteredStream();
         encryptData(objNum, genNum, encryptedStream, stream.createFilteredStream(), true /* decrypt */);
@@ -449,15 +456,15 @@ public abstract class SecurityHandler
         for (Map.Entry<COSName, COSBase> entry : dictionary.entrySet())
         {
             COSBase value = entry.getValue();
-            // within a dictionary only strings and streams have to be decrypted
-            if (value instanceof COSString || value instanceof COSStream || value instanceof COSArray)
+            // within a dictionary only the following kind of COS objects have to be decrypted
+            if (value instanceof COSString || value instanceof COSStream || value instanceof COSArray || value instanceof COSDictionary)
             {
                 // if we are a signature dictionary and contain a Contents entry then
                 // we don't decrypt it.
-                if (!(entry.getKey().getName().equals("Contents") && value instanceof COSString && potentialSignatures
+                if (!(entry.getKey().equals(COSName.CONTENTS) && value instanceof COSString && potentialSignatures
                         .contains(dictionary)))
                 {
-                    decrypt(entry.getValue(), objNum, genNum);
+                    decrypt(value, objNum, genNum);
                 }
             }
         }

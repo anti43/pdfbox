@@ -32,7 +32,6 @@ import org.apache.pdfbox.cos.COSNull;
 import org.apache.pdfbox.cos.COSStream;
 import org.apache.pdfbox.cos.COSString;
 
-//import javax.swing.tree.*;
 import javax.swing.tree.TreeModel;
 import javax.swing.tree.TreePath;
 import javax.swing.JFileChooser;
@@ -211,7 +210,7 @@ public class PDFDebugger extends javax.swing.JFrame
             }
             catch (Exception e)
             {
-                e.printStackTrace();
+                throw new RuntimeException(e);
             }
         }
     }//GEN-LAST:event_openMenuItemActionPerformed
@@ -239,7 +238,7 @@ public class PDFDebugger extends javax.swing.JFrame
             }
             catch (Exception e)
             {
-                e.printStackTrace();
+                throw new RuntimeException(e);
             }
         }
     }//GEN-LAST:event_jTree1ValueChanged
@@ -288,7 +287,7 @@ public class PDFDebugger extends javax.swing.JFrame
             }
             catch( IOException e )
             {
-                e.printStackTrace();
+                throw new RuntimeException(e);
             }
         }
         else if( selectedNode instanceof MapEntry )
@@ -310,9 +309,9 @@ public class PDFDebugger extends javax.swing.JFrame
             {
                 document.close();
             }
-            catch( IOException io )
+            catch( IOException e )
             {
-                io.printStackTrace();
+                throw new RuntimeException(e);
             }
         }
         System.exit(0);
@@ -329,9 +328,9 @@ public class PDFDebugger extends javax.swing.JFrame
             {
                 document.close();
             }
-            catch( IOException io )
+            catch( IOException e )
             {
-                io.printStackTrace();
+                throw new RuntimeException(e);
             }
         }
         System.exit(0);

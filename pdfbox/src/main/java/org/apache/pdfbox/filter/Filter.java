@@ -19,6 +19,9 @@ package org.apache.pdfbox.filter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Iterator;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -46,27 +49,19 @@ public abstract class Filter
      * @param encoded the encoded byte stream
      * @param decoded the stream where decoded data will be written
      * @param parameters the parameters used for decoding
+     * @param index the index to the filter being decoded
      * @return repaired parameters dictionary, or the original parameters dictionary
      * @throws IOException if the stream cannot be decoded
      */
-    public final DecodeResult decode(InputStream encoded, OutputStream decoded, COSDictionary parameters,
-                            int index) throws IOException
-    {
-        COSDictionary params = new COSDictionary();
-        params.addAll(parameters);
-        params.setItem(COSName.DECODE_PARMS, getDecodeParams(params, index));
-        return decode(encoded, decoded, params.asUnmodifiableDictionary());
-    }
-
-    // implemented in subclasses
-    protected abstract DecodeResult decode(InputStream encoded, OutputStream decoded,
-                                   COSDictionary parameters) throws IOException;
+    public abstract DecodeResult decode(InputStream encoded, OutputStream decoded, COSDictionary parameters,
+                            int index) throws IOException;
 
     /**
      * Encodes data.
      * @param input the byte stream to encode
      * @param encoded the stream where encoded data will be written
      * @param parameters the parameters used for encoding
+     * @param index the index to the filter being encoded
      * @throws IOException if the stream cannot be encoded
      */
     public final void encode(InputStream input, OutputStream encoded, COSDictionary parameters,
@@ -81,7 +76,7 @@ public abstract class Filter
 
     // gets the decode params for a specific filter index, this is used to
     // normalise the DecodeParams entry so that it is always a dictionary
-    private COSDictionary getDecodeParams(COSDictionary dictionary, int index)
+    protected COSDictionary getDecodeParams(COSDictionary dictionary, int index)
     {
         COSBase obj = dictionary.getDictionaryObject(COSName.DECODE_PARMS, COSName.DP);
         if (obj instanceof COSDictionary)
@@ -103,4 +98,32 @@ public abstract class Filter
         }
         return new COSDictionary();
     }
+
+    /**
+     * Finds a suitable image reader for a format.
+     *
+     * @param formatName The format to search for.
+     * @param errorCause The probably cause if something goes wrong.
+     * @return The image reader for the format.
+     * @throws MissingImageReaderException if no image reader is found.
+     */
+    protected ImageReader findImageReader(String formatName, String errorCause) throws MissingImageReaderException
+    {
+        Iterator<ImageReader> readers = ImageIO.getImageReadersByFormatName(formatName);
+        ImageReader reader = null;
+        while (readers.hasNext())
+        {
+            reader = readers.next();
+            if (reader.canReadRaster())
+            {
+                break;
+            }
+        }
+        if (reader == null)
+        {
+            throw new MissingImageReaderException("Cannot read " + formatName + " image: " + errorCause);
+        }
+        return reader;
+    }
+
 }

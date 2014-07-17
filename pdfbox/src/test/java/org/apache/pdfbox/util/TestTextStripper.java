@@ -175,18 +175,8 @@ public class TestTextStripper extends TestCase
                 }
             }
         }
-        else if( ( expected == null && actual != null && actual.trim().equals( "" ) ) ||
-            ( actual == null && expected != null && expected.trim().equals( "" ) ) )
-        {
-            //basically there are some cases where pdfbox will put an extra line
-            //at the end of the file, who cares, this is not enough to report
-            // a failure
-            equals = true;
-        }
-        else
-        {
-            equals = false;
-        }
+        else equals = ( expected == null && actual != null && actual.trim().isEmpty(  ) ) ||
+                ( actual == null && expected != null && expected.trim().isEmpty(  ) );
         return equals;
     }
 
@@ -283,9 +273,8 @@ public class TestTextStripper extends TestCase
             if (!expectedFile.exists())
             {
                 this.bFail = true;
-                log.error(
-                        "FAILURE: Input verification file: " + expectedFile.getAbsolutePath() +
-                " did not exist");
+                fail("FAILURE: Input verification file: " + expectedFile.getAbsolutePath() +
+                        " did not exist");
                 return;
             }
 
@@ -309,12 +298,12 @@ public class TestTextStripper extends TestCase
                 if (!stringsEqual(expectedLine, actualLine))
                 {
                     this.bFail = true;
-                    log.error("FAILURE: Line mismatch for file " + inFile.getName() +
+                    fail("FAILURE: Line mismatch for file " + inFile.getName() +
                             " ( sort = "+bSort+")" +
                             " at expected line: " + expectedReader.getLineNumber() +
-                            " at actual line: " + actualReader.getLineNumber());
-                    log.error("  expected line was: \"" + expectedLine + "\"");
-                    log.error("  actual line was:   \"" + actualLine + "\"" + "\n");
+                            " at actual line: " + actualReader.getLineNumber() +
+                            "\nexpected line was: \"" + expectedLine + "\"" +
+                            "\nactual line was:   \"" + actualLine + "\"" + "\n");
 
                     //lets report all lines, even though this might produce some verbose logging
                     //break;
@@ -346,13 +335,12 @@ public class TestTextStripper extends TestCase
                 return (name.endsWith(".pdf"));
             }
         });
-
-        for (int n = 0; n < testFiles.length; n++) 
+        for (File testFile : testFiles) 
         {
             //Test without sorting
-            doTestFile(testFiles[n], outDir, false, false);
+            doTestFile(testFile, outDir, false, false);
             //Test with sorting
-            doTestFile(testFiles[n], outDir, false, true);
+            doTestFile(testFile, outDir, false, true);
         }
     }
     

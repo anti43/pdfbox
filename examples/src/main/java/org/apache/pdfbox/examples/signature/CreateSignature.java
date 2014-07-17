@@ -31,12 +31,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.UnrecoverableKeyException;
-import java.security.cert.CertStore;
 import java.security.cert.Certificate;
-import java.security.cert.CollectionCertStoreParameters;
-import java.security.cert.X509Certificate;
+import java.security.interfaces.RSAPrivateKey;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.Enumeration;
@@ -50,19 +47,27 @@ import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1Object;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
+import org.bouncycastle.asn1.ASN1Primitive;
 import org.bouncycastle.asn1.DERSet;
 import org.bouncycastle.asn1.cms.Attribute;
 import org.bouncycastle.asn1.cms.AttributeTable;
 import org.bouncycastle.asn1.cms.Attributes;
 import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cms.CMSException;
-import org.bouncycastle.cms.CMSProcessable;
 import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.cms.CMSSignedDataGenerator;
-import org.bouncycastle.cms.CMSSignedGenerator;
+import org.bouncycastle.cms.SignerInfoGeneratorBuilder;
 import org.bouncycastle.cms.SignerInformation;
 import org.bouncycastle.cms.SignerInformationStore;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.crypto.params.RSAKeyParameters;
+import org.bouncycastle.operator.ContentSigner;
+import org.bouncycastle.operator.DefaultDigestAlgorithmIdentifierFinder;
+import org.bouncycastle.operator.DefaultSignatureAlgorithmIdentifierFinder;
+import org.bouncycastle.operator.OperatorCreationException;
+import org.bouncycastle.operator.bc.BcDigestCalculatorProvider;
+import org.bouncycastle.operator.bc.BcRSAContentSignerBuilder;
 import org.bouncycastle.tsp.TSPException;
 
 /**
@@ -266,21 +271,26 @@ public class CreateSignature implements SignatureInterface
     {
         try
         {
-            CMSProcessable processable = new CMSProcessableInputStream(content);
-
-            CertStore certStore = CertStore.getInstance("Collection",
-                    new CollectionCertStoreParameters(Arrays.asList(certificateChain)));
-
+            org.bouncycastle.asn1.x509.Certificate certificate =
+                    org.bouncycastle.asn1.x509.Certificate.getInstance(ASN1Primitive.fromByteArray(certificateChain[0].getEncoded()));
             CMSSignedDataGenerator gen = new CMSSignedDataGenerator();
-            gen.addSigner(privateKey, (X509Certificate) certificateChain[0], CMSSignedGenerator.DIGEST_SHA256);
-            gen.addCertificatesAndCRLs(certStore);
-            CMSSignedData signedData = gen.generate(processable, false, new BouncyCastleProvider());
 
+            
+            AlgorithmIdentifier sigAlgId = new DefaultSignatureAlgorithmIdentifierFinder().find("SHA256WITHRSAENCRYPTION");
+            AlgorithmIdentifier digAlgId = new DefaultDigestAlgorithmIdentifierFinder().find(sigAlgId);
+            RSAPrivateKey privateRSAKey = (RSAPrivateKey)privateKey; 
+            RSAKeyParameters keyParams = new RSAKeyParameters(true, privateRSAKey.getModulus(), privateRSAKey.getPrivateExponent()); 
+            ContentSigner sigGen = new BcRSAContentSignerBuilder(sigAlgId, digAlgId).build(keyParams);
+
+            gen.addSignerInfoGenerator(
+                    new SignerInfoGeneratorBuilder(new BcDigestCalculatorProvider())
+                        .build(sigGen, new X509CertificateHolder(certificate)));
+            CMSProcessableInputStream processable = new CMSProcessableInputStream(content);
+            CMSSignedData signedData = gen.generate(processable, false);
             if (tsaClient != null)
             {
                 signedData = signTimeStamps(signedData);
             }
-
             return signedData.getEncoded();
         }
         catch (GeneralSecurityException e)
@@ -292,6 +302,10 @@ public class CreateSignature implements SignatureInterface
             throw new IOException(e);
         }
         catch (TSPException e)
+        {
+            throw new IOException(e);
+        }
+        catch (OperatorCreationException e)
         {
             throw new IOException(e);
         }

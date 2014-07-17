@@ -25,7 +25,6 @@ import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.io.RandomAccess;
 import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.common.PDStream;
 import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceGray;
 
 /**
@@ -40,40 +39,59 @@ public final class CCITTFactory
     }
 
     /**
-     * Creates a new CCITT Fax compressed Image XObject from a TIFF file.
+     * Creates a new CCITT Fax compressed Image XObject from the first page of 
+     * a TIFF file.
      * 
      * @param document the document to create the image as part of.
-     * @param reader the random access TIFF file which contains a suitable CCITT compressed image
+     * @param reader the random access TIFF file which contains a suitable CCITT
+     * compressed image
      * @return a new Image XObject
      * @throws IOException if there is an error reading the TIFF data.
      */
-    public static PDImageXObject createFromRandomAccess(PDDocument document, RandomAccess reader)
+    public static PDImageXObject createFromRandomAccess(PDDocument document,
+            RandomAccess reader)
             throws IOException
+    {
+        return createFromRandomAccess(document, reader, 0);
+    }
+
+    /**
+     * Creates a new CCITT Fax compressed Image XObject from a TIFF file.
+     * 
+     * @param document the document to create the image as part of.
+     * @param reader the random access TIFF file which contains a suitable CCITT
+     * compressed image
+     * @param number TIFF image number, starting from 0
+     * @return a new Image XObject, or null if no such page
+     * @throws IOException if there is an error reading the TIFF data.
+     */
+    public static PDImageXObject createFromRandomAccess(PDDocument document,
+            RandomAccess reader, int number) throws IOException
     {
         COSDictionary decodeParms = new COSDictionary();
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        extractFromTiff(reader, bos, decodeParms);
-        ByteArrayInputStream byteStream = new ByteArrayInputStream(bos.toByteArray());
-        PDImageXObject pdImage = new PDImageXObject(document, byteStream);
-
+        extractFromTiff(reader, bos, decodeParms, number);
+        if (bos.size() == 0)
+        {
+            return null;
+        }
+        ByteArrayInputStream filteredByteStream = new ByteArrayInputStream(bos.toByteArray());
+        PDImageXObject pdImage = new PDImageXObject(document, 
+                filteredByteStream, 
+                COSName.CCITTFAX_DECODE, 
+                decodeParms.getInt(COSName.COLUMNS), 
+                decodeParms.getInt(COSName.ROWS),
+                1,
+                PDDeviceGray.INSTANCE);
+        
         COSDictionary dict = pdImage.getCOSStream();
-
-        dict.setItem(COSName.FILTER, COSName.CCITTFAX_DECODE);
-        dict.setItem(COSName.SUBTYPE, COSName.IMAGE);
-        dict.setItem(COSName.TYPE, COSName.XOBJECT);
         dict.setItem(COSName.DECODE_PARMS, decodeParms);
-
-        pdImage.setBitsPerComponent(1);
-        pdImage.setColorSpace(PDDeviceGray.INSTANCE);
-        pdImage.setWidth(decodeParms.getInt(COSName.COLUMNS));
-        pdImage.setHeight(decodeParms.getInt(COSName.ROWS));
-
         return pdImage;
     }
 
     // extracts the CCITT stream from the TIFF file
-    private static void extractFromTiff(RandomAccess reader, OutputStream os, COSDictionary params)
-            throws IOException
+    private static void extractFromTiff(RandomAccess reader, OutputStream os,
+            COSDictionary params, int number) throws IOException
     {
         try
         {
@@ -96,7 +114,26 @@ public final class CCITTFactory
             }
 
             // Relocate to the first set of tags
-            reader.seek(readlong(endianess, reader));
+            int address = readlong(endianess, reader);
+            reader.seek(address);
+    
+            // If some higher page number is required, skip this page's tags, 
+            // then read the next page's address
+            for (int i = 0; i < number; i++)
+            {
+                int numtags = readshort(endianess, reader);
+                if (numtags > 50)
+                {
+                    throw new IOException("Not a valid tiff file");
+                }
+                reader.seek(address + 2 + numtags * 12);
+                address = readlong(endianess, reader);
+                if (address == 0)
+                {
+                    return;
+                }
+                reader.seek(address);
+            }
 
             int numtags = readshort(endianess, reader);
 
@@ -200,9 +237,18 @@ public final class CCITTFactory
                     }
                     case 292:
                     {
-                        if (val == 1)
+                        if ((val & 1) != 0)
                         {
-                            k = 50; // T4 2D - arbitary K value
+                            k = 50; // T4 2D - arbitary positive K value
+                        }
+                        // http://www.awaresystems.be/imaging/tiff/tifftags/t4options.html
+                        if ((val & 4) != 0)
+                        {
+                            throw new IOException("CCITT Group 3 'uncompressed mode' is not supported");
+                        }
+                        if ((val & 2) != 0)
+                        {
+                            throw new IOException("CCITT Group 3 'fill bits before EOL' is not supported");
                         }
                         break;
                     }

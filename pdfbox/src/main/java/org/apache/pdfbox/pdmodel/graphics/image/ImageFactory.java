@@ -21,16 +21,10 @@ import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceCMYK;
 import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceGray;
 import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceRGB;
 
-import java.awt.AlphaComposite;
-import java.awt.Graphics2D;
-import java.awt.Transparency;
 import java.awt.color.ColorSpace;
 import java.awt.color.ICC_ColorSpace;
 import java.awt.image.BufferedImage;
-import java.awt.image.ColorModel;
-import java.awt.image.ComponentColorModel;
-import java.awt.image.DataBuffer;
-import java.awt.image.WritableRaster;
+import java.awt.image.ColorConvertOp;
 
 /**
  * An image factory.
@@ -44,21 +38,18 @@ class ImageFactory
     {
     }
 
-    // sets Image XObject properties from an AWT buffered image
-    protected static void setPropertiesFromAWT(BufferedImage awtImage, PDImageXObject pdImage)
+    // returns a PDColorSpace for a given BufferedImage
+    protected static PDColorSpace getColorSpaceFromAWT(BufferedImage awtImage)
     {
         if (awtImage.getColorModel().getNumComponents() == 1)
         {
             // 256 color (gray) JPEG
-            pdImage.setColorSpace(PDDeviceGray.INSTANCE);
+            return PDDeviceGray.INSTANCE;
         }
         else
         {
-            pdImage.setColorSpace(toPDColorSpace(awtImage.getColorModel().getColorSpace()));
+            return toPDColorSpace(awtImage.getColorModel().getColorSpace());
         }
-        pdImage.setBitsPerComponent(awtImage.getColorModel().getComponentSize(0));
-        pdImage.setHeight(awtImage.getHeight());
-        pdImage.setWidth(awtImage.getWidth());
     }
 
     // returns a PDColorSpace for a given AWT ColorSpace
@@ -81,25 +72,6 @@ class ImageFactory
         }
     }
 
-    // returns the alpha channel of an image
-    protected static BufferedImage getAlphaImage(BufferedImage image)
-    {
-        //FIXME This doesn't work. The raster returned has a
-        // SinglePixelPackedSampleModel, and ComponentColorModel created is not
-        // compatible with it, because the BufferedImage constructor expects a
-        // ComponentSampleModel, and with the same number of bands.
-        if (!image.getColorModel().hasAlpha())
-        {
-            return null;
-        }
-
-        // extract the alpha information
-        WritableRaster alphaRaster = image.getAlphaRaster();
-        ColorModel cm = new ComponentColorModel(ColorSpace.getInstance(ColorSpace.CS_GRAY),
-                false, false, Transparency.OPAQUE, DataBuffer.TYPE_BYTE);
-        return new BufferedImage(cm, alphaRaster, false, null);
-    }
-
     // returns the color channels of an image
     protected static BufferedImage getColorImage(BufferedImage image)
     {
@@ -114,14 +86,14 @@ class ImageFactory
         }
 
         // create an RGB image without alpha
-        BufferedImage rgbImage = new BufferedImage(image.getWidth(), image.getHeight(),
-                BufferedImage.TYPE_INT_RGB);
-
-        Graphics2D g = rgbImage.createGraphics();
-        g.setComposite(AlphaComposite.Src);
-        g.drawImage(image, 0, 0, null);
-        g.dispose();
-
-        return rgbImage;
+        //BEWARE: the previous solution in the history 
+        // g.setComposite(AlphaComposite.Src) and g.drawImage()
+        // didn't work properly for TYPE_4BYTE_ABGR.
+        // alpha values of 0 result in a black dest pixel!!!
+        BufferedImage rgbImage = new BufferedImage(
+                image.getWidth(),
+                image.getHeight(),
+                BufferedImage.TYPE_3BYTE_BGR);
+        return new ColorConvertOp(null).filter(image, rgbImage);
     }
 }

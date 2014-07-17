@@ -39,9 +39,9 @@ import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSStream;
 import org.apache.pdfbox.encoding.DictionaryEncoding;
 import org.apache.pdfbox.encoding.Encoding;
-import org.apache.pdfbox.encoding.EncodingManager;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDResources;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDFontFactory;
 import org.apache.pdfbox.preflight.PreflightConstants;
@@ -53,7 +53,7 @@ import org.apache.pdfbox.preflight.exception.ValidationException;
 import org.apache.pdfbox.preflight.font.container.FontContainer;
 import org.apache.pdfbox.preflight.font.container.Type3Container;
 import org.apache.pdfbox.preflight.font.util.GlyphException;
-import org.apache.pdfbox.preflight.font.util.PDFAType3StreamParser;
+import org.apache.pdfbox.preflight.font.util.PreflightType3Stream;
 import org.apache.pdfbox.preflight.utils.COSUtils;
 import org.apache.pdfbox.preflight.utils.ContextHelper;
 
@@ -222,12 +222,11 @@ public class Type3FontValidator extends FontValidator<Type3Container>
      */
     private void checkEncodingAsString(COSBase fontEncoding)
     {
-        EncodingManager emng = new EncodingManager();
         // Encoding is a Name, check if it is an Existing Encoding
         String enc = COSUtils.getAsString(fontEncoding, cosDocument);
         try
         {
-            this.encoding = emng.getEncoding(COSName.getPDFName(enc));
+            this.encoding = Encoding.getInstance(COSName.getPDFName(enc));
         }
         catch (IOException e)
         {
@@ -296,8 +295,9 @@ public class Type3FontValidator extends FontValidator<Type3Container>
         int lc = this.font.getLastChar();
 
         /*
-         * wArr length = (lc - fc) + 1 and it is an array of int. If FirstChar is greater than LastChar, the validation
-         * will fail because of the array will have an expected size <= 0.
+         * wArr length = (lc - fc) + 1 and it is an array of int. 
+         * If FirstChar is greater than LastChar, the validation
+         * will fail because of the array will have an expected size &lt;= 0.
          */
         int expectedLength = (lc - fc) + 1;
         if (widths.size() != expectedLength)
@@ -404,9 +404,8 @@ public class Type3FontValidator extends FontValidator<Type3Container>
     private float getWidthFromCharacterStream(PDResources resources, COSStream charStream) throws IOException
     {
         PreflightPath vPath = context.getValidationPath();
-        PDFAType3StreamParser parser = new PDFAType3StreamParser(context, vPath.getClosestPathElement(PDPage.class));
-        parser.resetEngine();
-        parser.processSubStream(resources, charStream);
+        PreflightType3Stream parser = new PreflightType3Stream(context, vPath.getClosestPathElement(PDPage.class));
+        parser.processStream(resources, charStream, new PDRectangle(0, 0, 1000, 1000)); // dummy bbox
         return parser.getWidth();
     }
 

@@ -26,7 +26,7 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 
 import org.apache.pdfbox.pdmodel.edit.PDPageContentStream;
-import org.apache.pdfbox.pdmodel.font.PDSimpleFont;
+import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDTrueTypeFont;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 
@@ -40,7 +40,7 @@ import org.apache.pdfbox.pdmodel.font.PDType1Font;
 public class TextToPDF
 {
     private int fontSize = 10;
-    private PDSimpleFont font = PDType1Font.HELVETICA;
+    private PDFont font = PDType1Font.HELVETICA;
 
     /**
      * Create a PDF document with some text.
@@ -170,6 +170,9 @@ public class TextToPDF
      */
     public static void main(String[] args) throws IOException
     {
+        // suppress the Dock icon on OS X
+        System.setProperty("apple.awt.UIElement", "true");
+
         TextToPDF app = new TextToPDF();
         PDDocument doc = null;
         try
@@ -207,10 +210,6 @@ public class TextToPDF
                 doc.save( args[args.length-2] );
             }
         }
-        catch (Exception e)
-        {
-            e.printStackTrace();
-        }
         finally
         {
             if( doc != null )
@@ -228,9 +227,9 @@ public class TextToPDF
         String[] std14 = PDType1Font.getStandard14Names();
         System.err.println( "usage: jar -jar pdfbox-app-x.y.z.jar TextToPDF [options] <output-file> <text-file>" );
         System.err.println( "    -standardFont <name>    default:" + PDType1Font.HELVETICA.getBaseFont() );
-        for( int i=0; i<std14.length; i++ )
+        for (String std14String : std14)
         {
-            System.err.println( "                                    " + std14[i] );
+            System.err.println("                                    " + std14String);
         }
         System.err.println( "    -ttf <ttf file>         The TTF font to use.");
         System.err.println( "    -fontSize <fontSize>    default:10" );
@@ -240,14 +239,14 @@ public class TextToPDF
     /**
      * @return Returns the font.
      */
-    public PDSimpleFont getFont()
+    public PDFont getFont()
     {
         return font;
     }
     /**
      * @param aFont The font to set.
      */
-    public void setFont(PDSimpleFont aFont)
+    public void setFont(PDFont aFont)
     {
         this.font = aFont;
     }

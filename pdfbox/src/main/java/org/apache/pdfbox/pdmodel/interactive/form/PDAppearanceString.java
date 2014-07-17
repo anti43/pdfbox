@@ -45,14 +45,13 @@ import org.apache.pdfbox.pdmodel.common.PDRectangle;
 
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDFontDescriptor;
-import org.apache.pdfbox.pdmodel.font.PDSimpleFont;
 
 import org.apache.pdfbox.pdmodel.interactive.action.PDFormFieldAdditionalActions;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAppearanceDictionary;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAppearanceStream;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationWidget;
 
-import org.apache.pdfbox.util.operator.PDFOperator;
+import org.apache.pdfbox.util.operator.Operator;
 
 /**
  * A default appearance string contains any graphics state or text state operators needed to
@@ -64,12 +63,12 @@ import org.apache.pdfbox.util.operator.PDFOperator;
  */
 public final class PDAppearanceString
 {
-    private PDVariableText parent;
+    private final PDVariableText parent;
 
     private String value;
-    private COSString defaultAppearance;
+    private final COSString defaultAppearance;
 
-    private PDAcroForm acroForm;
+    private final PDAcroForm acroForm;
     private List<COSObjectable> widgets = new ArrayList<COSObjectable>();
 
 
@@ -192,7 +191,7 @@ public final class PDAppearanceString
      */
     private boolean containsMarkedContent( List stream )
     {
-        return stream.contains( PDFOperator.getOperator( "BMC" ) );
+        return stream.contains( Operator.getOperator("BMC") );
     }
 
     /**
@@ -204,19 +203,13 @@ public final class PDAppearanceString
      */
     public void setAppearanceValue(String apValue) throws IOException
     {
-        // MulitLine check and set
-        if ( parent.isMultiline() && apValue.indexOf('\n') != -1 )
-        {
-            apValue = convertToMultiLine( apValue );
-        }
-
         value = apValue;
         Iterator<COSObjectable> widgetIter = widgets.iterator();
         while( widgetIter.hasNext() )
         {
             COSObjectable next = widgetIter.next();
             PDField field = null;
-            PDAnnotationWidget widget = null;
+            PDAnnotationWidget widget;
             if( next instanceof PDField )
             {
                 field = (PDField)next;
@@ -283,8 +276,8 @@ public final class PDAppearanceString
                     {
                         if( daTokens != null )
                         {
-                            int bmcIndex = tokens.indexOf( PDFOperator.getOperator( "BMC" ));
-                            int emcIndex = tokens.indexOf( PDFOperator.getOperator( "EMC" ));
+                            int bmcIndex = tokens.indexOf( Operator.getOperator("BMC"));
+                            int emcIndex = tokens.indexOf( Operator.getOperator("EMC"));
                             if( bmcIndex != -1 && emcIndex != -1 &&
                                 emcIndex == bmcIndex+1 )
                             {
@@ -297,17 +290,17 @@ public final class PDAppearanceString
                         ContentStreamWriter writer = new ContentStreamWriter( output );
                         float fontSize = calculateFontSize( pdFont, appearanceStream.getBoundingBox(), tokens, null );
                         boolean foundString = false;
-                        for( int i=0; i<tokens.size(); i++ )
+                        for (Object token : tokens)
                         {
-                            if( tokens.get( i ) instanceof COSString )
+                            if (token instanceof COSString)
                             {
                                 foundString = true;
-                                COSString drawnString =((COSString)tokens.get(i));
+                                COSString drawnString = (COSString) token;
                                 drawnString.reset();
                                 drawnString.append( apValue.getBytes("ISO-8859-1") );
                             }
                         }
-                        int setFontIndex = tokens.indexOf( PDFOperator.getOperator( "Tf" ));
+                        int setFontIndex = tokens.indexOf( Operator.getOperator("Tf"));
                         tokens.set( setFontIndex-1, new COSFloat( fontSize ) );
                         if( foundString )
                         {
@@ -315,8 +308,8 @@ public final class PDAppearanceString
                         }
                         else
                         {
-                            int bmcIndex = tokens.indexOf( PDFOperator.getOperator( "BMC" ) );
-                            int emcIndex = tokens.indexOf( PDFOperator.getOperator( "EMC" ) );
+                            int bmcIndex = tokens.indexOf( Operator.getOperator("BMC") );
+                            int emcIndex = tokens.indexOf( Operator.getOperator("EMC") );
 
                             if( bmcIndex != -1 )
                             {
@@ -350,8 +343,7 @@ public final class PDAppearanceString
     {
         PrintWriter printWriter = new PrintWriter( output, true );
         float fontSize = 0.0f;
-        PDRectangle boundingBox = null;
-        boundingBox = appearanceStream.getBoundingBox();
+        PDRectangle boundingBox = appearanceStream.getBoundingBox();
         if( boundingBox == null )
         {
             boundingBox = fieldWidget.getRectangle().createRetranslatedRectangle();
@@ -364,7 +356,7 @@ public final class PDAppearanceString
             daParser.parse();
             List<Object> daTokens = daParser.getTokens();
             fontSize = calculateFontSize( pdFont, boundingBox, tokens, daTokens );
-            int fontIndex = daTokens.indexOf( PDFOperator.getOperator( "Tf" ) );
+            int fontIndex = daTokens.indexOf( Operator.getOperator("Tf") );
             if(fontIndex != -1 )
             {
                 daTokens.set( fontIndex-1, new COSFloat( fontSize ) );
@@ -397,14 +389,26 @@ public final class PDAppearanceString
             throw new IOException( "Error: Unknown justification value:" + q );
         }
         // add the value as hex string to deal with non ISO-8859-1 data values
-        printWriter.println("<" + new COSString(value).getHexString() + "> Tj");
+        if (!isMultiLineValue(value))
+        {
+            printWriter.println("<" + new COSString(value).getHexString() + "> Tj");
+        }
+        else
+        {
+            String[] lines = value.split("\n");
+            for (int i = 0; i < lines.length; i++)
+            {
+                boolean lastLine = i == (lines.length - 1);
+                String endingTag = lastLine ? "> Tj\n" : "> Tj 0 -13 Td";
+                printWriter.print("<" + new COSString(lines[i]).getHexString() + endingTag);
+            }
+        }        
         printWriter.println("ET" );
         printWriter.flush();
     }
 
     private PDFont getFontAndUpdateResources( List tokens, PDAppearanceStream appearanceStream ) throws IOException
     {
-
         PDFont retval = null;
         PDResources streamResources = appearanceStream.getResources();
         PDResources formResources = acroForm.getDefaultResources();
@@ -426,7 +430,7 @@ public final class PDAppearanceString
                 tokens = streamParser.getTokens();
             }
 
-            int setFontIndex = tokens.indexOf( PDFOperator.getOperator( "Tf" ));
+            int setFontIndex = tokens.indexOf( Operator.getOperator("Tf"));
             COSName cosFontName = (COSName)tokens.get( setFontIndex-2 );
             String fontName = cosFontName.getName();
             retval = (PDFont)streamResources.getFonts().get( fontName );
@@ -439,21 +443,11 @@ public final class PDAppearanceString
         return retval;
     }
 
-    private String convertToMultiLine( String line )
+    private boolean isMultiLineValue(String value)
     {
-        int currIdx = 0;
-        int lastIdx = 0;
-        StringBuffer result = new StringBuffer(line.length() + 64);
-        while( (currIdx = line.indexOf('\n',lastIdx )) > -1 )
-        {
-            result.append(line.substring(lastIdx,currIdx));
-            result.append(" ) Tj\n0 -13 Td\n(");
-            lastIdx = currIdx + 1;
-        }
-        result.append(line.substring(lastIdx));
-        return result.toString();
+        return (parent.isMultiline() && value.contains("\n"));
     }
-
+    
     /**
      * Writes the stream to the actual stream in the COSStream.
      *
@@ -477,8 +471,8 @@ public final class PDAppearanceString
         float retval = 1;
         if( tokens != null )
         {
-            int btIndex = tokens.indexOf(PDFOperator.getOperator( "BT" ));
-            int wIndex = tokens.indexOf(PDFOperator.getOperator( "w" ));
+            int btIndex = tokens.indexOf(Operator.getOperator("BT"));
+            int wIndex = tokens.indexOf(Operator.getOperator("w"));
             //the w should only be used if it is before the first BT.
             if( (wIndex > 0) && (wIndex < btIndex) )
             {
@@ -494,7 +488,7 @@ public final class PDAppearanceString
         for( int i=0; i<tokens.size(); i++ )
         {
             Object next = tokens.get( i );
-            if( next == PDFOperator.getOperator( "re" ) )
+            if( next == Operator.getOperator("re") )
             {
                 COSNumber x = (COSNumber)tokens.get( i-4 );
                 COSNumber y = (COSNumber)tokens.get( i-3 );
@@ -532,7 +526,7 @@ public final class PDAppearanceString
         {
             //daString looks like   "BMC /Helv 3.4 Tf EMC"
 
-            int fontIndex = daTokens.indexOf( PDFOperator.getOperator( "Tf" ) );
+            int fontIndex = daTokens.indexOf( Operator.getOperator("Tf") );
             if(fontIndex != -1 )
             {
                 fontSize = ((COSNumber)daTokens.get(fontIndex-1)).floatValue();
@@ -553,9 +547,9 @@ public final class PDAppearanceString
             float lineWidth = getLineWidth( tokens );
             float stringWidth = pdFont.getStringWidth( value );
             float height = 0;
-            if( pdFont instanceof PDSimpleFont )
+            if( pdFont instanceof PDFont )
             {
-                height = ((PDSimpleFont)pdFont).getFontDescriptor().getFontBoundingBox().getHeight();
+                height = ((PDFont)pdFont).getFontDescriptor().getFontBoundingBox().getHeight();
             }
             else
             {
@@ -592,7 +586,7 @@ public final class PDAppearanceString
         }
         else
         {
-            if( pdFont instanceof PDSimpleFont )
+            if( pdFont instanceof PDFont )
             {
                 //BJL 9/25/2004
                 //This algorithm is a little bit of black magic.  It does
@@ -601,7 +595,7 @@ public final class PDAppearanceString
                 //have determined that the below method of computing the position
                 //is correct for certain documents, but maybe not all.  It does
                 //work f1040ez.pdf and Form_1.pdf
-                PDFontDescriptor fd = ((PDSimpleFont)pdFont).getFontDescriptor();
+                PDFontDescriptor fd = ((PDFont)pdFont).getFontDescriptor();
                 float bBoxHeight = boundingBox.getHeight();
                 float fontHeight = fd.getFontBoundingBox().getHeight() + 2 * fd.getDescent();
                 fontHeight = (fontHeight/1000) * fontSize;

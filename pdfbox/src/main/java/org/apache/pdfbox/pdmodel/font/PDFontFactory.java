@@ -73,18 +73,49 @@ public class PDFontFactory
         }
         else if (COSName.CID_FONT_TYPE0.equals(subType))
         {
-            return new PDCIDFontType0Font(dictionary);
+            throw new IllegalArgumentException("Type 0 descendant font not allowed");
         }
         else if (COSName.CID_FONT_TYPE2.equals(subType))
         {
-            return new PDCIDFontType2Font(dictionary);
+            throw new IllegalArgumentException("Type 0 descendant font not allowed");
         }
         else
         {
             // assuming Type 1 font (see PDFBOX-1988) because it seems that Adobe Reader does this
             // however, we may need more sophisticated logic perhaps looking at the FontFile
-            LOG.warn("Invalid font subtype '" + subType.getName() + "'");
+            LOG.warn("Invalid font subtype '" + subType + "'");
             return new PDType1Font(dictionary);
+        }
+    }
+
+    /**
+     * Creates a new PDCIDFont instance with the appropriate subclass.
+     *
+     * @param dictionary descendant font dictionary
+     * @return a PDCIDFont instance, based on the SubType entry of the dictionary
+     * @throws IOException
+     */
+    static PDCIDFont createDescendantFont(COSDictionary dictionary, PDType0Font parent)
+            throws IOException
+    {
+        COSName type = dictionary.getCOSName(COSName.TYPE, COSName.FONT);
+        if (!COSName.FONT.equals(type))
+        {
+            throw new IOException("Expected 'Font' dictionary but found '" + type.getName() + "'");
+        }
+
+        COSName subType = dictionary.getCOSName(COSName.SUBTYPE);
+        if (COSName.CID_FONT_TYPE0.equals(subType))
+        {
+            return new PDCIDFontType0Font(dictionary, parent);
+        }
+        else if (COSName.CID_FONT_TYPE2.equals(subType))
+        {
+            return new PDCIDFontType2Font(dictionary, parent);
+        }
+        else
+        {
+            throw new IOException("Invalid font type: " + type);
         }
     }
 }

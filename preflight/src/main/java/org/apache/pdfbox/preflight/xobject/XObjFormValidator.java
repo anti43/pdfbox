@@ -40,7 +40,7 @@ import org.apache.pdfbox.preflight.PreflightConstants;
 import org.apache.pdfbox.preflight.PreflightContext;
 import org.apache.pdfbox.preflight.PreflightPath;
 import org.apache.pdfbox.preflight.ValidationResult.ValidationError;
-import org.apache.pdfbox.preflight.content.ContentStreamWrapper;
+import org.apache.pdfbox.preflight.content.PreflightContentStream;
 import org.apache.pdfbox.preflight.exception.ValidationException;
 import org.apache.pdfbox.preflight.utils.COSUtils;
 import org.apache.pdfbox.preflight.utils.ContextHelper;
@@ -109,7 +109,7 @@ public class XObjFormValidator extends AbstractXObjValidator
     protected void validateXObjectContent() throws ValidationException
     {
         PreflightPath vPath = context.getValidationPath();
-        ContentStreamWrapper csWrapper = new ContentStreamWrapper(context, vPath.getClosestPathElement(PDPage.class));
+        PreflightContentStream csWrapper = new PreflightContentStream(context, vPath.getClosestPathElement(PDPage.class));
         csWrapper.validXObjContentStream(pdXObj);
     }
 
@@ -133,7 +133,7 @@ public class XObjFormValidator extends AbstractXObjValidator
                 String sVal = groupDictionary.getNameAsString(COSName.S);
                 if (sVal == null || XOBJECT_DICTIONARY_VALUE_S_TRANSPARENCY.equals(sVal))
                 {
-                    context.addValidationError(new ValidationError(ERROR_GRAPHIC_TRANSPARENCY_GROUP, "Group has a transparency S entry or the S entry is null."));
+                    context.addValidationError(new ValidationError(ERROR_GRAPHIC_TRANSPARENCY_GROUP, "Group has a transparency S entry or the S entry is null ["+xobject.toString()+"]"));
                     return;
                 }
             }

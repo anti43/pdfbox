@@ -17,40 +17,32 @@
 package org.apache.pdfbox.pdmodel.font;
 
 import java.io.IOException;
+import java.io.InputStream;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.pdfbox.cos.COSArray;
+import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSName;
+import org.apache.pdfbox.cos.COSStream;
+import org.apache.pdfbox.encoding.DictionaryEncoding;
+import org.apache.pdfbox.encoding.Encoding;
+import org.apache.pdfbox.io.IOUtils;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.util.ResourceLoader;
 
 /**
- * This is implementation of the Type0 Font. See <a
- * href="https://issues.apache.org/jira/browse/PDFBOX-605">PDFBOX-605</a> for the related improvement issue.
+ * Type 0 (composite) Font.
  * 
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
+ * @author Ben Litchfield
  */
-public class PDType0Font extends PDSimpleFont
+public class PDType0Font extends PDFont
 {
-
-    /**
-     * Log instance.
-     */
     private static final Log LOG = LogFactory.getLog(PDType0Font.class);
 
-    private COSArray descendantFontArray;
-    private PDFont descendantFont;
+    private PDCIDFont descendantFont;
     private COSDictionary descendantFontDictionary;
-
-    /**
-     * Constructor.
-     */
-    public PDType0Font()
-    {
-        super();
-        font.setItem(COSName.SUBTYPE, COSName.TYPE0);
-    }
 
     /**
      * Constructor.
@@ -60,12 +52,13 @@ public class PDType0Font extends PDSimpleFont
     public PDType0Font(COSDictionary fontDictionary)
     {
         super(fontDictionary);
-        descendantFontDictionary = (COSDictionary) getDescendantFonts().getObject(0);
+        COSArray descendantFonts = (COSArray)dict.getDictionaryObject(COSName.DESCENDANT_FONTS);
+        descendantFontDictionary = (COSDictionary)descendantFonts.getObject(0);
         if (descendantFontDictionary != null)
         {
             try
             {
-                descendantFont = PDFontFactory.createFont(descendantFontDictionary);
+                descendantFont = PDFontFactory.createDescendantFont(descendantFontDictionary, this);
             }
             catch (IOException exception)
             {
@@ -75,80 +68,151 @@ public class PDType0Font extends PDSimpleFont
     }
 
     /**
-     * {@inheritDoc}
+     * Returns the descendant font.
+     *
+     * @return the descendant font.
      */
+    public PDCIDFont getDescendantFont()
+    {
+        return descendantFont;
+    }
+
+    @Override
+    public PDFontDescriptor getFontDescriptor()
+    {
+        return descendantFont.getFontDescriptor();
+    }
+
     @Override
     public PDRectangle getFontBoundingBox() throws IOException
     {
         throw new RuntimeException("Not yet implemented");
     }
 
-    /**
-     * {@inheritDoc}
-     */
     @Override
     public float getFontWidth(byte[] c, int offset, int length) throws IOException
     {
-        if (descendantFont instanceof PDCIDFontType2Font)
-        {
-            // a suitable mapping is needed to address the correct width value
-            PDCIDFontType2Font cidType2Font = (PDCIDFontType2Font) descendantFont;
-            int code = getCodeFromArray(c, offset, length);
-            if (cidType2Font.hasIdentityCIDToGIDMap() || cidType2Font.hasCIDToGIDMap())
-            {
-                return cidType2Font.getFontWidth(code);
-            }
-            else if (getCMap() != null)
-            {
-                String mappedString = getCMap().lookup(code, length);
-                if (mappedString != null)
-                {
-                    return cidType2Font.getFontWidth(mappedString.codePointAt(0));
-                }
-            }
-        }
         return descendantFont.getFontWidth(c, offset, length);
     }
 
-    /**
-     * {@inheritDoc}
-     */
     @Override
     public float getFontHeight(byte[] c, int offset, int length) throws IOException
     {
         return descendantFont.getFontHeight(c, offset, length);
     }
 
-    /**
-     * {@inheritDoc}
-     */
     @Override
     public float getAverageFontWidth() throws IOException
     {
         return descendantFont.getAverageFontWidth();
     }
 
-    private COSArray getDescendantFonts()
-    {
-        if (descendantFontArray == null)
-        {
-            descendantFontArray = (COSArray) font.getDictionaryObject(COSName.DESCENDANT_FONTS);
-        }
-        return descendantFontArray;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
     @Override
     public float getFontWidth(int charCode)
     {
         return descendantFont.getFontWidth(charCode);
     }
 
-    /**
-     * {@inheritDoc}
-     */
+    // todo: copied from PDSimpleFont and modified
+    // todo: for a Type 0 font this can only be "The name of a predefined CMap, or a stream containing a
+    // CMap that maps character codes to font numbers and CIDs", so I should adjust this accordingly
+    @Override
+    protected void determineEncoding()
+    {
+        String cmapName = null;
+        COSName encodingName = null;
+        COSBase encoding = dict.getDictionaryObject(COSName.ENCODING);
+        Encoding fontEncoding = null;
+        if (encoding != null)
+        {
+            if (encoding instanceof COSName)
+            {
+                if (cmap == null)
+                {
+                    encodingName = (COSName) encoding;
+                    cmap = cmapObjects.get(encodingName.getName());
+                    if (cmap == null)
+                    {
+                        cmapName = encodingName.getName();
+                    }
+                }
+                if (cmap == null && cmapName != null)
+                {
+                    try
+                    {
+                        fontEncoding = Encoding.getInstance(encodingName);
+                    }
+                    catch (IOException exception)
+                    {
+                        LOG.debug("Debug: Could not find encoding for " + encodingName);
+                    }
+                }
+            }
+            else if (encoding instanceof COSStream)
+            {
+                if (cmap == null)
+                {
+                    COSStream encodingStream = (COSStream) encoding;
+                    try
+                    {
+                        InputStream is = encodingStream.getUnfilteredStream();
+                        cmap = parseCmap(null, is);
+                        IOUtils.closeQuietly(is);
+                    }
+                    catch (IOException exception)
+                    {
+                        LOG.error("Error: Could not parse the embedded CMAP");
+                    }
+                }
+            }
+            else if (encoding instanceof COSDictionary)
+            {
+                try
+                {
+                    fontEncoding = new DictionaryEncoding((COSDictionary) encoding);
+                }
+                catch (IOException exception)
+                {
+                    LOG.error("Error: Could not create the DictionaryEncoding");
+                }
+            }
+        }
+        this.fontEncoding = fontEncoding;
+        extractToUnicodeEncoding(); // todo: IMPORTANT!
+
+        if (cmap == null && cmapName != null)
+        {
+            InputStream cmapStream = null;
+            try
+            {
+                // look for a predefined CMap with the given name
+                cmapStream = ResourceLoader.loadResource(resourceRootCMAP + cmapName);
+                if (cmapStream != null)
+                {
+                    cmap = parseCmap(resourceRootCMAP, cmapStream);
+                    if (cmap == null && encodingName == null)
+                    {
+                        LOG.error("Error: Could not parse predefined CMAP file for '" +
+                                cmapName + "'");
+                    }
+                }
+                else
+                {
+                    LOG.debug("Debug: '" + cmapName + "' isn't a predefined map, most likely it's" +
+                            "embedded in the pdf itself.");
+                }
+            }
+            catch (IOException exception)
+            {
+                LOG.error("Error: Could not find predefined CMAP file for '" + cmapName + "'");
+            }
+            finally
+            {
+                IOUtils.closeQuietly(cmapStream);
+            }
+        }
+    }
+
     @Override
     public String encode(byte[] c, int offset, int length) throws IOException
     {
@@ -169,16 +233,15 @@ public class PDType0Font extends PDSimpleFont
         return retval;
     }
 
-    /**
-     * 
-     * Provides the descendant font.
-     * 
-     * @return the descendant font.
-     * 
-     */
-    public PDFont getDescendantFont()
+    @Override
+    public void clear()
     {
-        return descendantFont;
+        super.clear();
+        if (descendantFont != null)
+        {
+            descendantFont.clear();
+            descendantFont = null;
+        }
+        descendantFontDictionary = null;
     }
-
 }

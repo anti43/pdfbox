@@ -17,6 +17,7 @@
 
 package org.apache.pdfbox.examples.pdmodel;
 
+import java.io.File;
 import java.io.IOException;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -55,7 +56,7 @@ public class HelloWorldTTF
 
             PDPage page = new PDPage();
             doc.addPage(page);
-            PDFont font = PDTrueTypeFont.loadTTF(doc, fontfile);
+            PDFont font = PDTrueTypeFont.loadTTF(doc, new File(fontfile));
 
             PDPageContentStream contentStream = new PDPageContentStream(doc,
                     page);
@@ -85,24 +86,17 @@ public class HelloWorldTTF
      *
      * @param args Command line arguments.
      */
-    public static void main(String[] args)
+    public static void main(String[] args) throws IOException
     {
 
         HelloWorldTTF app = new HelloWorldTTF();
-        try
+        if (args.length != 3)
         {
-            if (args.length != 3)
-            {
-                app.usage();
-            }
-            else
-            {
-                app.doIt(args[0], args[1], args[2]);
-            }
+            app.usage();
         }
-        catch (Exception e)
+        else
         {
-            e.printStackTrace();
+            app.doIt(args[0], args[1], args[2]);
         }
     }
 

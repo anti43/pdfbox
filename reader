@@ -1,0 +1,2 @@
+#!/bin/bash
+java -cp $(find /home/patric/.m2/repository/org/apache/pdfbox/*/2.0.0-SNAPSHOT/*2.0.0-SNAPSHOT.jar | sort | awk -v ORS=: '{if(/CVS/){}else{print}}') org.apache.pdfbox.tools.PDFReader $*

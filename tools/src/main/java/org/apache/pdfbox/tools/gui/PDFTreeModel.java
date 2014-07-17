@@ -27,7 +27,6 @@ package org.apache.pdfbox.tools.gui;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeModel;
 
-//import java.awt.event.*;
 import javax.swing.event.TreeModelListener;
 
 import org.apache.pdfbox.cos.COSArray;
@@ -99,8 +98,8 @@ public class PDFTreeModel implements TreeModel
      * child array.  <code>parent</code> must be a node previously obtained
      * from this data source. This should not return <code>null</code>
      * if <code>index</code>
-     * is a valid index for <code>parent</code> (that is <code>index >= 0 &&
-     * index < getChildCount(parent</code>)).
+     * is a valid index for <code>parent</code> (that is <code>index &gt;= 0 &&
+     * index &lt; getChildCount(parent</code>)).
      *
      * @param   parent  a node in the tree, obtained from this data source
      * @param index The index into the parent object to location the child object.

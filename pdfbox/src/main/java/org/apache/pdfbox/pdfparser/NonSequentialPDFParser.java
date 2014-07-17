@@ -81,10 +81,9 @@ import org.apache.pdfbox.persistence.util.COSObjectKey;
  */
 public class NonSequentialPDFParser extends PDFParser
 {
+    private static final byte[] XREF = new byte[] { 'x', 'r', 'e', 'f' };
 
-	private static final byte[] XREF = new byte[] { 'x', 'r', 'e', 'f' };
-
-	private static final int E = 'e';
+    private static final int E = 'e';
     private static final int N = 'n';
     private static final int X = 'x';
 
@@ -270,7 +269,7 @@ public class NonSequentialPDFParser extends PDFParser
      * be deleted at end of the parse method
      * 
      * @param input
-     * @return
+     * @return the temporary file
      * @throws IOException If something went wrong.
      */
     private File createTmpFile(InputStream input) throws IOException
@@ -355,6 +354,17 @@ public class NonSequentialPDFParser extends PDFParser
                 // use existing parser to parse xref table
                 parseXrefTable(prev);
                 // parse the last trailer.
+                long trailerOffset = pdfSource.getOffset();
+                //PDFBOX-1739 skip extra xref entries in RegisSTAR documents
+                while (isLenient && pdfSource.peek() != 't')
+                {
+                    if (pdfSource.getOffset() == trailerOffset)
+                    {
+                        // warn only the first time
+                        LOG.warn("Expected trailer object at position " + trailerOffset + ", keep trying");
+                    }
+                    readLine();
+                }
                 if (!parseTrailer())
                 {
                     throw new IOException("Expected trailer object at position: " + pdfSource.getOffset());
@@ -480,6 +490,10 @@ public class NonSequentialPDFParser extends PDFParser
                 }
             }
         }
+        
+        // PDFBOX-1922: read the version again now that all objects have been resolved
+        readVersionInTrailer(trailer);
+        
         initialParseDone = true;
     }
 
@@ -681,8 +695,8 @@ public class NonSequentialPDFParser extends PDFParser
         {
             if (pdfSource.read() != c)
             {
-                throw new IOException("Expected pattern '" + new String(pattern) + " but missed at character '" + c
-                        + "'");
+                throw new IOException("Expected pattern '" + new String(pattern) + "' but missed at character '" + c
+                        + "' at offset " + pdfSource.getOffset());
             }
         }
 
@@ -733,6 +747,11 @@ public class NonSequentialPDFParser extends PDFParser
 
         try
         {
+            // PDFBOX-1922 read the version header and rewind
+            // this part copied from the sequential parser
+            parseHeader();
+            pdfSource.seek(0);
+            
             if (!initialParseDone)
             {
                 initialParse();
@@ -963,7 +982,7 @@ public class NonSequentialPDFParser extends PDFParser
 
     /**
      * Creates a unique object id using object number and object generation
-     * number. (requires object number < 2^31))
+     * number. (requires object number &lt; 2^31))
      */
     private final long getObjectId(final COSObject obj)
     {
@@ -1537,13 +1556,13 @@ public class NonSequentialPDFParser extends PDFParser
             if (useReadUntilEnd)
             {
                 out = stream.createFilteredStream(streamLengthObj);
-                readUntilEndStream(out);
+                readUntilEndStream(new EndstreamOutputStream(out));
             }
             String endStream = readString();
             if (!endStream.equals("endstream"))
             {
                 throw new IOException("Error reading stream using length value. Expected='endstream' actual='"
-                        + endStream + "' ");
+                        + endStream + "' at offset " + pdfSource.getOffset());
             }
         }
         finally
@@ -1579,9 +1598,9 @@ public class NonSequentialPDFParser extends PDFParser
     	}
     	return streamLengthIsValid;
     }
+
     private void readUntilEndStream(final OutputStream out) throws IOException
     {
-
         int bufSize;
         int charMatchCount = 0;
         byte[] keyw = ENDSTREAM;
@@ -1593,7 +1612,7 @@ public class NonSequentialPDFParser extends PDFParser
         // beginning of buffer
         while ((bufSize = pdfSource.read(streamCopyBuf, charMatchCount, streamCopyBufLen - charMatchCount)) > 0)
         {
-        	// number of already matching chars
+            // number of already matching chars
             int startingMatchCount = charMatchCount;
             int bIdx = charMatchCount;
             int quickTestIdx;
@@ -1606,7 +1625,7 @@ public class NonSequentialPDFParser extends PDFParser
                 // match if current one matches; if it is not a character from
                 // keywords
                 // we can move behind the test character;
-                // this shortcut is inspired by Boyer–Moore string search
+                // this shortcut is inspired by Boyer-Moore string search
                 // algorithm
                 // and can reduce parsing time by approx. 20%
                 if ((charMatchCount == 0) && ((quickTestIdx = bIdx + quickTestOffset) < maxQuicktestIdx))
@@ -1626,7 +1645,6 @@ public class NonSequentialPDFParser extends PDFParser
 
                 final byte ch = streamCopyBuf[bIdx]; // could be negative - but
                                                      // we only compare to ASCII
-
                 if (ch == keyw[charMatchCount])
                 {
                     if (++charMatchCount == keyw.length)
@@ -1643,7 +1661,6 @@ public class NonSequentialPDFParser extends PDFParser
                         // maybe ENDSTREAM is missing but we could have ENDOBJ
                         keyw = ENDOBJ;
                         charMatchCount++;
-
                     }
                     else
                     {
@@ -1675,23 +1692,23 @@ public class NonSequentialPDFParser extends PDFParser
             {
                 // keyword matched; 
             	// unread matched keyword (endstream/endobj) and following buffered content
-           		pdfSource.unread(streamCopyBuf, contentBytes, bufSize - contentBytes - keyw.length + startingMatchCount);
+           	pdfSource.unread(streamCopyBuf, contentBytes, bufSize - contentBytes - keyw.length + startingMatchCount);
                 break;
-
             }
             else
             {
                 // copy matched chars at start of buffer
                 System.arraycopy(keyw, 0, streamCopyBuf, 0, charMatchCount);
             }
-
         } // while
+        
+        out.flush(); // this writes a lonely CR or drops trailing CR LF and LF
     }
     
     /**
      * 
      * @param startXRefOffset
-     * @return
+     * @return the calculated offset
      * @throws IOException
      */
     private long calculateFixingOffset(long startXRefOffset) throws IOException

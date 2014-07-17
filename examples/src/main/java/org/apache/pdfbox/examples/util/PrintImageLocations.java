@@ -23,12 +23,12 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
-import org.apache.pdfbox.pdmodel.graphics.state.PDGraphicsState;
 import org.apache.pdfbox.pdmodel.graphics.PDXObject;
 import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.util.Matrix;
-import org.apache.pdfbox.util.operator.PDFOperator;
+import org.apache.pdfbox.util.operator.Operator;
+import org.apache.pdfbox.util.operator.Operator;
 import org.apache.pdfbox.util.PDFStreamEngine;
 import org.apache.pdfbox.util.ResourceLoader;
 
@@ -101,7 +101,7 @@ public class PrintImageLocations extends PDFStreamEngine
                     PDPage page = (PDPage)allPages.get( i );
                     System.out.println( "Processing page: " + i );
                     printer.processStream( page.findResources(), page.getContents().getStream(),
-                    		page.findCropBox(), page.findRotation() );
+                    		page.findCropBox() );
                 }
             }
             finally
@@ -122,7 +122,7 @@ public class PrintImageLocations extends PDFStreamEngine
      *
      * @throws IOException If there is an error processing the operation.
      */
-    protected void processOperator( PDFOperator operator, List arguments ) throws IOException
+    protected void processOperator( Operator operator, List arguments ) throws IOException
     {
         String operation = operator.getOperation();
         if( INVOKE_OPERATOR.equals(operation) )
@@ -164,7 +164,7 @@ public class PrintImageLocations extends PDFStreamEngine
             else if(xobject instanceof PDFormXObject)
             {
                 // save the graphics state
-                getGraphicsStack().push( (PDGraphicsState)getGraphicsState().clone() );
+                saveGraphicsState();
                 
                 PDFormXObject form = (PDFormXObject)xobject;
                 COSStream invoke = (COSStream)form.getCOSObject();
@@ -179,7 +179,7 @@ public class PrintImageLocations extends PDFStreamEngine
                 processSubStream( pdResources, invoke );
                 
                 // restore the graphics state
-                setGraphicsState( (PDGraphicsState)getGraphicsStack().pop() );
+                restoreGraphicsState();
             }
             
         }

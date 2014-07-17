@@ -20,10 +20,18 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import org.apache.pdfbox.cos.COSName;
+import org.apache.pdfbox.io.IOUtils;
 
+import org.apache.pdfbox.cos.COSStream;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDResources;
@@ -32,6 +40,8 @@ import org.apache.pdfbox.pdmodel.encryption.StandardDecryptionMaterial;
 import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.pdmodel.graphics.PDXObject;
+import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceGray;
+import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceRGB;
 import org.apache.pdfbox.pdmodel.graphics.image.TIFFInputStream;
 import org.apache.pdfbox.util.ImageIOUtil;
 
@@ -46,11 +56,21 @@ import org.apache.pdfbox.util.ImageIOUtil;
 public class ExtractImages
 {
     private int imageCounter = 1;
+    private Set<COSStream> seen = new HashSet<COSStream>();
 
     private static final String PASSWORD = "-password";
     private static final String PREFIX = "-prefix";
     private static final String ADDKEY = "-addkey";
     private static final String NONSEQ = "-nonSeq";
+    private static final String DIRECTJPEG = "-directJPEG";
+
+    private static final List<String> DCT_FILTERS = new ArrayList<String>();
+
+    static
+    {
+        DCT_FILTERS.add( COSName.DCT_DECODE.getName() );
+        DCT_FILTERS.add( COSName.DCT_DECODE_ABBREVIATION.getName() );
+    }
 
     private ExtractImages()
     {
@@ -65,6 +85,9 @@ public class ExtractImages
      */
     public static void main( String[] args ) throws Exception
     {
+        // suppress the Dock icon on OS X
+        System.setProperty("apple.awt.UIElement", "true");
+
         ExtractImages extractor = new ExtractImages();
         extractor.extractImages( args );
     }
@@ -82,6 +105,7 @@ public class ExtractImages
             String prefix = null;
             boolean addKey = false;
             boolean useNonSeqParser = false;
+            boolean directJPEG = false;
             for( int i=0; i<args.length; i++ )
             {
                 if( args[i].equals( PASSWORD ) )
@@ -109,6 +133,10 @@ public class ExtractImages
                 else if( args[i].equals( NONSEQ ) )
                 {
                     useNonSeqParser = true;
+                }
+                else if( args[i].equals( DIRECTJPEG ) )
+                {
+                    directJPEG = true;
                 }
                 else
                 {
@@ -161,7 +189,7 @@ public class ExtractImages
                         PDPage page = (PDPage)iter.next();
                         PDResources resources = page.getResources();
                         // extract all XObjectImages which are part of the page resources
-                        processResources(resources, prefix, addKey);
+                        processResources(resources, prefix, addKey, directJPEG);
                     }
                 }
                 finally
@@ -175,7 +203,8 @@ public class ExtractImages
         }
     }
 
-    private void processResources(PDResources resources, String prefix, boolean addKey) throws IOException
+    private void processResources(PDResources resources, String prefix, 
+            boolean addKey, boolean directJPEG) throws IOException
     {
         if (resources == null)
         {
@@ -192,28 +221,48 @@ public class ExtractImages
                 // write the images
                 if (xobject instanceof PDImageXObject)
                 {
+                    if (seen.contains(xobject.getCOSStream()))
+                    {
+                        // skip duplicate image
+                        continue;
+                    }
+                    seen.add(xobject.getCOSStream());
+
                     PDImageXObject image = (PDImageXObject)xobject;
                     String name = null;
                     if (addKey) 
                     {
-                        name = getUniqueFileName( prefix + "_" + key, image.getSuffix() );
+                        name = prefix + "-" + imageCounter + "_" + key;
                     }
                     else 
                     {
-                        name = getUniqueFileName( prefix, image.getSuffix() );
+                        name = prefix + "-" + imageCounter;
                     }
+                    imageCounter++;
+
                     System.out.println( "Writing image:" + name );
-                    write2file( image, name );
+                    write2file( image, name, directJPEG );
+                    image.clearCache();
                 }
                 // maybe there are more images embedded in a form object
                 else if (xobject instanceof PDFormXObject)
                 {
                     PDFormXObject xObjectForm = (PDFormXObject)xobject;
                     PDResources formResources = xObjectForm.getResources();
-                    processResources(formResources, prefix, addKey);
+                    processResources(formResources, prefix, addKey, directJPEG);
                 }
             }
         }
+        resources.clearCache();
+    }
+    
+    // get and write the unmodified JPEG stream
+    private void writeJpeg2OutputStream(PDImageXObject ximage, OutputStream out)
+            throws IOException
+    {
+        InputStream data = ximage.getPDStream().getPartiallyFilteredStream(DCT_FILTERS);        
+        IOUtils.copy(data, out);
+        IOUtils.closeQuietly(data);
     }
 
     /**
@@ -222,8 +271,15 @@ public class ExtractImages
      * @param filename the filename
      * @throws IOException When somethings wrong with the corresponding file.
      */
-    private void write2file(PDImageXObject xobj, String filename) throws IOException
+    private void write2file(PDImageXObject xobj, String filename, boolean directJPEG) throws IOException
     {
+        if (xobj.getSuffix() == null || xobj.getSuffix().isEmpty())
+        {
+            System.err.println ("image has no suffix, skipped");
+            System.err.println ("filter(s): " + xobj.getCOSStream().getFilters());
+            return;
+        }
+
         FileOutputStream out = null;
         try
         {
@@ -235,7 +291,26 @@ public class ExtractImages
                 {
                     TIFFInputStream.writeToOutputStream(xobj, out);
                 }
-                else
+                else if ("jpg".equals(xobj.getSuffix()))
+                {
+                    String colorSpaceName = xobj.getColorSpace().getName();
+                    if (directJPEG ||
+                            PDDeviceGray.INSTANCE.getName().equals(colorSpaceName) ||
+                            PDDeviceRGB.INSTANCE.getName().equals(colorSpaceName))
+                    {
+                        // directJPEG option, RGB or Gray colorspace:
+                        // get and write the unmodified JPEG stream
+                        writeJpeg2OutputStream(xobj, out);
+                    }
+                    else
+                    {
+                        // CMYK and other "unusual" colorspaces
+                        // create BufferedImage with correct colors and then save into a 
+                        // JPEG (some quality loss)
+                        ImageIOUtil.writeImage(xobj.getImage(), xobj.getSuffix(), out);
+                    }
+                }
+                else 
                 {
                     ImageIOUtil.writeImage(image, xobj.getSuffix(), out);
                 }
@@ -251,19 +326,6 @@ public class ExtractImages
         }
     }
 
-    private String getUniqueFileName( String prefix, String suffix )
-    {
-        String uniqueName = null;
-        File f = null;
-        while( f == null || f.exists() )
-        {
-            uniqueName = prefix + "-" + imageCounter;
-            f = new File( uniqueName + "." + suffix );
-            imageCounter++;
-        }
-        return uniqueName;
-    }
-
     /**
      * This will print the usage requirements and exit.
      */
@@ -274,6 +336,7 @@ public class ExtractImages
             "  -prefix  <image-prefix>      Image prefix(default to pdf name)\n" +
             "  -addkey                      add the internal image key to the file name\n" +
             "  -nonSeq                      Enables the new non-sequential parser\n" +
+            "  -directJPEG                  Forces the direct extraction of JPEG images regardless of colorspace\n" +
             "  <PDF file>                   The PDF document to use\n"
             );
         System.exit( 1 );

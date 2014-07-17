@@ -37,13 +37,26 @@ public class PDFRenderer
     protected final PDDocument document;
     // TODO keep rendering state such as caches here
 
+    private boolean clearResourcesAutomatically;
+
     /**
      * Creates a new PDFRenderer.
      * @param document the document to render
      */
     public PDFRenderer(PDDocument document)
     {
+        this(document, true);
+    }
+
+    /**
+     * Creates a new PDFRenderer.
+     * @param document the document to render
+     * @param clearResourcesAutomatically true to clear cached page resources after rendering
+     */
+    public PDFRenderer(PDDocument document, boolean clearResourcesAutomatically)
+    {
         this.document = document;
+        this.clearResourcesAutomatically = clearResourcesAutomatically;
     }
 
     /**
@@ -165,7 +178,7 @@ public class PDFRenderer
      * Renders a given page to an AWT Graphics2D instance.
      * @param pageIndex the zero-based index of the page to be converted
      * @param graphics the Graphics2D on which to draw the page
-     * @scale scale the scale to draw the page at
+     * @param scale the scale to draw the page at
      * @throws IOException if the PDF cannot be read
      */
     public void renderPageToGraphics(int pageIndex, Graphics2D graphics, float scale)
@@ -210,8 +223,13 @@ public class PDFRenderer
             graphics.rotate((float) Math.toRadians(rotationAngle));
         }
 
-        PageDrawer drawer = new PageDrawer(this);   // TODO: need to make it easy to use a custom PageDrawer
-        drawer.drawPage(graphics, page, cropBox);
-        drawer.dispose();
+        // TODO: need to make it easy to use a custom PageDrawer and TilingPatternDrawer
+        PageDrawer drawer = new PageDrawer(this, page);
+        drawer.drawPage(graphics, cropBox);
+
+        if (clearResourcesAutomatically)
+        {
+            page.clearCache();
+        }
     }
 }

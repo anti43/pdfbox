@@ -122,6 +122,7 @@ public class WriteDecodedDoc
                     cosStream.setFilters(null);
                 }
             }
+            doc.getDocumentCatalog();
             doc.save( out );
         }
         finally
@@ -140,8 +141,11 @@ public class WriteDecodedDoc
      *
      * @param args command line arguments
      */
-    public static void main(String[] args)
+    public static void main(String[] args) throws IOException
     {
+        // suppress the Dock icon on OS X
+        System.setProperty("apple.awt.UIElement", "true");
+
         WriteDecodedDoc app = new WriteDecodedDoc();
         String password = "";
         boolean useNonSeqParser = false;
@@ -181,18 +185,11 @@ public class WriteDecodedDoc
         }
         else
         {
-            try
+            if (outputFile == null)
             {
-                if (outputFile == null)
-                {
-                    outputFile = calculateOutputFilename(pdfFile);
-                }
-                app.doIt(pdfFile, outputFile, password, useNonSeqParser);
+                outputFile = calculateOutputFilename(pdfFile);
             }
-            catch (Exception e)
-            {
-                e.printStackTrace();
-            }
+            app.doIt(pdfFile, outputFile, password, useNonSeqParser);
         }
     }
 

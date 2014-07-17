@@ -197,7 +197,7 @@ public class PDNumberTreeNode implements COSObjectable
                 COSInteger key = (COSInteger)namesArray.getObject(i);
                 COSBase cosValue = namesArray.getObject( i+1 );
                 COSObjectable pdValue = convertCOSToPD( cosValue );
-                indices.put( Integer.valueOf(key.intValue()), pdValue );
+                indices.put( key.intValue(), pdValue );
             }
             indices = Collections.unmodifiableMap(indices);
         }
@@ -259,9 +259,8 @@ public class PDNumberTreeNode implements COSObjectable
             List<Integer> keys = new ArrayList<Integer>( numbers.keySet() );
             Collections.sort( keys );
             COSArray array = new COSArray();
-            for( int i=0; i<keys.size(); i++ )
+            for (Integer key : keys)
             {
-                Integer key = keys.get(i);
                 array.add( COSInteger.get( key ) );
                 COSObjectable obj = (COSObjectable)numbers.get( key );
                 array.add( obj );
@@ -270,8 +269,8 @@ public class PDNumberTreeNode implements COSObjectable
             Integer upper = null;
             if( keys.size() > 0 )
             {
-                lower = (Integer)keys.get( 0 );
-                upper = (Integer)keys.get( keys.size()-1 );
+                lower = keys.get( 0 );
+                upper = keys.get( keys.size()-1 );
             }
             setUpperLimit( upper );
             setLowerLimit( lower );
@@ -290,7 +289,7 @@ public class PDNumberTreeNode implements COSObjectable
         COSArray arr = (COSArray)node.getDictionaryObject( COSName.LIMITS );
         if( arr != null && arr.get(0) != null )
         {
-            retval = Integer.valueOf(arr.getInt( 1 ));
+            retval = arr.getInt( 1 );
         }
         return retval;
     }
@@ -312,7 +311,7 @@ public class PDNumberTreeNode implements COSObjectable
         }
         if ( upper != null)
         {
-            arr.setInt( 1, upper.intValue() );
+            arr.setInt( 1, upper);
         }
         else
         {
@@ -331,7 +330,7 @@ public class PDNumberTreeNode implements COSObjectable
         COSArray arr = (COSArray)node.getDictionaryObject( COSName.LIMITS );
         if( arr != null && arr.get(0) != null )
         {
-            retval = Integer.valueOf(arr.getInt( 0 ));
+            retval = arr.getInt( 0 );
         }
         return retval;
     }
@@ -353,7 +352,7 @@ public class PDNumberTreeNode implements COSObjectable
         }
         if ( lower != null )
         {
-            arr.setInt( 0, lower.intValue() );
+            arr.setInt( 0, lower);
         }
         else
         {

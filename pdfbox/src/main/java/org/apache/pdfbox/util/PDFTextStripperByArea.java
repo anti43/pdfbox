@@ -53,7 +53,6 @@ public class PDFTextStripperByArea extends PDFTextStripper
     public PDFTextStripperByArea() throws IOException
     {
         super();
-        setPageSeparator( "" );
     }
 
         
@@ -72,7 +71,6 @@ public class PDFTextStripperByArea extends PDFTextStripper
     public PDFTextStripperByArea(Properties props) throws IOException
     {
         super(props);
-        setPageSeparator("");
     }
 
     /**
@@ -88,7 +86,6 @@ public class PDFTextStripperByArea extends PDFTextStripper
     public PDFTextStripperByArea(String encoding) throws IOException
     {
         super(encoding);
-        setPageSeparator("");
     }
     
    /**
@@ -159,6 +156,7 @@ public class PDFTextStripperByArea extends PDFTextStripper
     /**
      * {@inheritDoc}
      */
+    @Override
     protected void processTextPosition( TextPosition text )
     {
         Iterator<String> regionIter = regionArea.keySet().iterator();

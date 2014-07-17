@@ -22,7 +22,6 @@ import java.io.IOException;
  * A table in a true type font.
  * 
  * @author Ben Litchfield (ben@benlitchfield.com)
- * @version $Revision: 1.1 $
  */
 public class HorizontalMetricsTable extends TTFTable
 {
@@ -42,12 +41,11 @@ public class HorizontalMetricsTable extends TTFTable
      * @param data The stream to read the data from.
      * @throws IOException If there is an error reading the data.
      */
-    public void initData( TrueTypeFont ttf, TTFDataStream data ) throws IOException
+    public void read(TrueTypeFont ttf, TTFDataStream data) throws IOException
     {
         HorizontalHeaderTable hHeader = ttf.getHorizontalHeader();
-        MaximumProfileTable maxp = ttf.getMaximumProfile();
         int numHMetrics = hHeader.getNumberOfHMetrics();
-        int numGlyphs = maxp.getNumGlyphs();
+        int numGlyphs = ttf.getNumberOfGlyphs();
         
         advanceWidth = new int[ numHMetrics ];
         leftSideBearing = new short[ numHMetrics ];
@@ -63,6 +61,7 @@ public class HorizontalMetricsTable extends TTFTable
         {
             nonHorizontalLeftSideBearing[i] = data.readSignedShort();
         }
+        initialized = true;
     }
     /**
      * @return Returns the advanceWidth.
@@ -76,6 +75,6 @@ public class HorizontalMetricsTable extends TTFTable
      */
     public void setAdvanceWidth(int[] advanceWidthValue)
     {
-        this.advanceWidth = advanceWidthValue;
+        advanceWidth = advanceWidthValue;
     }
 }

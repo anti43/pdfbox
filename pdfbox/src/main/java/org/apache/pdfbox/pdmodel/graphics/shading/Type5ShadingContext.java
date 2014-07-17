@@ -49,7 +49,7 @@ class Type5ShadingContext extends GouraudShadingContext
      * @param pageHeight height of the current page
      * @throws IOException if something went wrong
      */
-    public Type5ShadingContext(PDShadingType5 shading, ColorModel cm, AffineTransform xform,
+    Type5ShadingContext(PDShadingType5 shading, ColorModel cm, AffineTransform xform,
                                Matrix ctm, int pageHeight) throws IOException
     {
         super(shading, cm, xform, ctm, pageHeight);
@@ -60,8 +60,8 @@ class Type5ShadingContext extends GouraudShadingContext
         LOG.debug("bitsPerColorComponent: " + bitsPerColorComponent);
         bitsPerCoordinate = shading.getBitsPerCoordinate();
         LOG.debug(Math.pow(2, bitsPerCoordinate) - 1);
-        long maxSrcCoord = (int) Math.pow(2, bitsPerCoordinate) - 1;
-        long maxSrcColor = (int) Math.pow(2, bitsPerColorComponent) - 1;
+        long maxSrcCoord = (long) Math.pow(2, bitsPerCoordinate) - 1;
+        long maxSrcColor = (long) Math.pow(2, bitsPerColorComponent) - 1;
         LOG.debug("maxSrcCoord: " + maxSrcCoord);
         LOG.debug("maxSrcColor: " + maxSrcColor);
 
@@ -100,7 +100,7 @@ class Type5ShadingContext extends GouraudShadingContext
         
         // p318:
         //  reading in sequence from higher-order to lower-order bit positions
-        ImageInputStream mciis = new MemoryCacheImageInputStream(cosStream.getFilteredStream());
+        ImageInputStream mciis = new MemoryCacheImageInputStream(cosStream.getUnfilteredStream());
 
         int verticesPerRow = shading.getVerticesPerRow(); //TODO check >=2
         LOG.debug("verticesPerRow" + verticesPerRow);
