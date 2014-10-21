@@ -205,7 +205,8 @@ public class PageDrawer extends PDFGraphicsStreamEngine
     public void drawPage(Graphics g, PDRectangle pageSize) throws IOException
     {
         graphics = (Graphics2D) g;
-
+        xform = graphics.getTransform();
+        
         this.pageSize = pageSize;
         applyRenderingHints(graphics);
         graphics.translate(0, (int)pageSize.getHeight());

@@ -475,7 +475,7 @@ public abstract class BaseParser
 //                length = ( (COSNumber) ( (COSObject) streamLength ).getObject() ).intValue();
 //            } 
             
-            if ( length == -1 )
+            if (true/* length == -1*/ )
             {
                 // Couldn't determine length from dict: just
                 // scan until we find endstream:
