@@ -16,47 +16,53 @@
  */
 package org.apache.pdfbox.pdmodel.interactive.form;
 
-import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSName;
 
-import java.io.IOException;
-
 /**
- * A scrollable list box.
- * Contains several text items, one or more of which shall be selected as the field value.
+ * A scrollable list box. Contains several text items, one or more of which shall be selected as the field value.
+ * 
  * @author John Hewson
  */
 public final class PDListBox extends PDChoice
 {
     /**
-     * Creates a new list box field
-     * @param acroForm the parent form
-     * @param field the COS field
+     * Constructor.
+     * 
+     * @param acroForm The form that this field is part of.
+     * @param field the PDF object to represent as a field.
+     * @param parentNode the parent node of the node to be created
      */
-    public PDListBox(PDAcroForm acroForm, COSDictionary field)
+    public PDListBox(PDAcroForm acroForm, COSDictionary field, PDFieldTreeNode parentNode)
     {
-        super(acroForm, field);
+        super(acroForm, field, parentNode);
     }
 
-    @Override
-    public void setValue(String optionValue) throws IOException
+    /**
+     * This will get the top index "TI" value.
+     *
+     * @return the top index, default value 0.
+     */
+    public int getTopIndex()
     {
-        COSArray options = (COSArray)getDictionary().getDictionaryObject(COSName.OPT);
-        if(options.size() == 0)
-        {
-            throw new IllegalArgumentException("List box does not contain the given value");
-        }
+        return getDictionary().getInt(COSName.TI, 0);
+    }
 
-        int index = getSelectedIndex(optionValue);
-        if (index == -1)
+    /**
+     * This will set top index "TI" value.
+     *
+     * @param topIndex the value for the top index, null will remove the value.
+     */
+    public void setTopIndex(Integer topIndex)
+    {
+        if (topIndex != null)
         {
-            throw new IllegalArgumentException("List box does not contain the given value");
+            getDictionary().setInt(COSName.TI, topIndex);
         }
         else
         {
-            super.setValue(optionValue);
-            selectMultiple(index);
+            getDictionary().removeItem(COSName.TI);
         }
     }
+
 }

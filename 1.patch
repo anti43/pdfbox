@@ -1,0 +1,327 @@
+From 47dcf89a7f96593dfdbf86a5c61cabf1fcf7f7bb Mon Sep 17 00:00:00 2001
+From: Patric Bechtel <p.bechtel@oashi.com>
+Date: Tue, 22 Apr 2014 11:06:15 +0200
+Subject: [PATCH] use java-image-scaling for high quality scaling of images.
+
+---
+ parent/pom.xml                                     | 18 ++--
+ pdfbox/pom.xml                                     | 11 ++-
+ .../org/apache/pdfbox/rendering/PageDrawer.java    | 95 ++++++++++++++++------
+ 3 files changed, 91 insertions(+), 33 deletions(-)
+
+diff --git a/parent/pom.xml b/parent/pom.xml
+index 0eb7126..264bc02 100644
+--- a/parent/pom.xml
++++ b/parent/pom.xml
+@@ -39,7 +39,7 @@
+         <name>The Apache Software Foundation</name>
+         <url>http://pdfbox.apache.org</url>
+     </organization>
+-  
++
+     <issueManagement>
+         <system>jira</system>
+         <url>https://issues.apache.org/jira/browse/PDFBOX</url>
+@@ -87,9 +87,13 @@
+                 <artifactId>log4j</artifactId>
+                 <version>1.2.17</version>
+             </dependency>
+-          
+-            <!-- For legal reasons (incompatible license), these two dependencies 
+-            are to be used only in the tests and may not be distributed. 
++            <dependency>
++                <groupId>com.mortennobel</groupId>
++                <artifactId>java-image-scaling</artifactId>
++                <version>0.8.5</version>
++            </dependency>
++            <!-- For legal reasons (incompatible license), these two dependencies
++            are to be used only in the tests and may not be distributed.
+             See also LEGAL-195 -->
+             <dependency>
+                 <groupId>com.levigo.jbig2</groupId>
+@@ -102,10 +106,10 @@
+                 <artifactId>jai-imageio-core-standalone</artifactId>
+                 <version>1.2-pre-dr-b04-2013-04-23</version>
+                 <scope>test</scope>
+-            </dependency>        
++            </dependency>
+         </dependencies>
+     </dependencyManagement>
+-  
++
+     <repositories>
+         <repository>
+             <id>jbig2.googlecode</id>
+@@ -118,7 +122,7 @@
+             <url>http://www.mygrid.org.uk/maven/repository</url>
+         </repository>
+     </repositories>
+-  
++
+     <profiles>
+         <profile>
+             <id>pedantic</id>
+diff --git a/pdfbox/pom.xml b/pdfbox/pom.xml
+index 661fe8a..5eca07f 100644
+--- a/pdfbox/pom.xml
++++ b/pdfbox/pom.xml
+@@ -71,8 +71,13 @@
+             <artifactId>junit</artifactId>
+             <scope>test</scope>
+         </dependency>
+-        <!-- For legal reasons (incompatible license), these two dependencies 
+-        are to be used only in the tests and may not be distributed. 
++        <dependency>
++            <groupId>com.mortennobel</groupId>
++            <artifactId>java-image-scaling</artifactId>
++            <version>0.8.5</version>
++        </dependency>
++        <!-- For legal reasons (incompatible license), these two dependencies
++        are to be used only in the tests and may not be distributed.
+         See also LEGAL-195 -->
+         <dependency>
+             <groupId>com.levigo.jbig2</groupId>
+@@ -83,7 +88,7 @@
+             <groupId>net.java.dev.jai-imageio</groupId>
+             <artifactId>jai-imageio-core-standalone</artifactId>
+             <scope>test</scope>
+-        </dependency>        
++        </dependency>
+     </dependencies>
+ 
+     <build>
+diff --git a/pdfbox/src/main/java/org/apache/pdfbox/rendering/PageDrawer.java b/pdfbox/src/main/java/org/apache/pdfbox/rendering/PageDrawer.java
+index 75cd6b6..832de32 100644
+--- a/pdfbox/src/main/java/org/apache/pdfbox/rendering/PageDrawer.java
++++ b/pdfbox/src/main/java/org/apache/pdfbox/rendering/PageDrawer.java
+@@ -24,7 +24,10 @@
+ import java.awt.Graphics2D;
+ import java.awt.Image;
+ import java.awt.Paint;
++import java.awt.Rectangle;
+ import java.awt.RenderingHints;
++import java.awt.TexturePaint;
++import java.awt.Transparency;
+ import java.awt.font.FontRenderContext;
+ import java.awt.font.GlyphVector;
+ import java.awt.geom.AffineTransform;
+@@ -32,12 +35,17 @@
+ import java.awt.geom.GeneralPath;
+ import java.awt.geom.NoninvertibleTransformException;
+ import java.awt.geom.Point2D;
++import java.awt.image.BufferedImage;
+ import java.io.IOException;
+ import java.util.HashMap;
+ import java.util.Iterator;
+ import java.util.List;
+ import java.util.Map;
+ 
++import com.mortennobel.imagescaling.ResampleFilters;
++import com.mortennobel.imagescaling.ResampleOp;
++import com.mortennobel.imagescaling.AdvancedResizeOp;
++
+ import org.apache.commons.logging.Log;
+ import org.apache.commons.logging.LogFactory;
+ import org.apache.fontbox.cff.CFFFont;
+@@ -81,14 +89,15 @@
+ 
+ /**
+  * This will paint a page in a PDF document to a graphics context.
+- * 
++ *
+  * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
+- * 
++ *
+  */
+ public class PageDrawer extends PDFStreamEngine
+ {
+     private static final Log LOG = LogFactory.getLog(PageDrawer.class);
+     private static final Color COLOR_TRANSPARENT = new Color(0, 0, 0, 0);
++    private static int currentFilter=0;
+ 
+     // parent document renderer
+     private final PDFRenderer renderer;
+@@ -104,10 +113,12 @@
+     private Map<PDFont, Font> awtFonts = new HashMap<PDFont, Font>();
+ 
+     private int pageHeight;
+-    
++
++    private boolean highQuality = false;
++
+     /**
+      * Default constructor, loads properties from file.
+-     * 
++     *
+      * @throws IOException If there is an error loading properties from the file.
+      */
+     public PageDrawer(PDFRenderer renderer) throws IOException
+@@ -136,11 +147,11 @@ public int getPageHeight()
+ 
+     /**
+      * This will draw the page to the requested context.
+-     * 
++     *
+      * @param g The graphics context to draw onto.
+      * @param page The page to draw.
+      * @param pageSize The size of the page to draw.
+-     * 
++     *
+      * @throws IOException If there is an IO error while drawing the page.
+      */
+     public void drawPage(Graphics g, PDPage page, PDRectangle pageSize) throws IOException
+@@ -260,7 +271,7 @@ public void dispose()
+ 
+     /**
+      * You should override this method if you want to perform an action when a text is being processed.
+-     * 
++     *
+      * @param text The text to process
+      */
+     protected void processTextPosition(TextPosition text)
+@@ -339,7 +350,7 @@ protected void processTextPosition(TextPosition text)
+ 
+     /**
+      * Render the font using the Glyph2d interface.
+-     * 
++     *
+      * @param glyph2D the Glyph2D implementation provided a GeneralPath for each glyph
+      * @param codePoints the string to be rendered
+      * @param at the transformation
+@@ -380,11 +391,11 @@ private void drawGlyph2D(Glyph2D glyph2D, int[] codePoints, AffineTransform at)
+ 
+     /**
+      * Render the text using a type 3 font.
+-     * 
++     *
+      * @param font the type3 font
+      * @param text the text to be rendered
+      * @param at the transformation
+-     * 
++     *
+      * @throws IOException if something went wrong
+      */
+     private void drawType3String(PDType3Font font, TextPosition text, AffineTransform at) throws IOException
+@@ -452,7 +463,7 @@ private void writeFont(final AffineTransform at, final GlyphVector glyphs)
+ 
+     /**
+      * Provides an AWT font for the given PDFont.
+-     * 
++     *
+      * @param font the font which needs an AWT font
+      * @return the corresponding AWT font
+      * @throws IOException if something went wrong
+@@ -520,7 +531,7 @@ private Font createAWTFont(PDSimpleFont font) throws IOException
+ 
+     /**
+      * Provide a Glyph2D for the given font.
+-     * 
++     *
+      * @param font the font
+      * @return the implementation of the Glyph2D interface for the given font
+      * @throws IOException if something went wrong
+@@ -610,7 +621,7 @@ else if (type0Font.getDescendantFont() instanceof PDCIDFontType0Font)
+ 
+     /**
+      * Get the current line path to be drawn.
+-     * 
++     *
+      * @return The current line path to be drawn.
+      */
+     public GeneralPath getLinePath()
+@@ -670,7 +681,7 @@ private BasicStroke getStroke()
+ 
+     /**
+      * Stroke the path.
+-     * 
++     *
+      * @throws IOException If there is an IO error while stroking the path.
+      */
+     public void strokePath() throws IOException
+@@ -766,9 +777,9 @@ private float transformWidth(float width)
+ 
+     /**
+      * Set the clipping winding rule.
+-     * 
++     *
+      * @param windingRule The winding rule which will be used for clipping.
+-     * 
++     *
+      */
+     public void setClippingWindingRule(int windingRule)
+     {
+@@ -777,7 +788,7 @@ public void setClippingWindingRule(int windingRule)
+ 
+     /**
+      * Set the clipping Path.
+-     * 
++     *
+      */
+     public void endPath()
+     {
+@@ -806,21 +817,59 @@ public void endPath()
+     /**
+      * Draw the AWT image. Called by Invoke. Moved into PageDrawer so that Invoke doesn't have to reach in here for
+      * Graphics as that breaks extensibility.
+-     * 
++     *
+      * @param awtImage The image to draw.
+      * @param at The transformation to use when drawing.
+-     * 
++     *
+      */
+-    public void drawImage(Image awtImage, AffineTransform at)
++    public void drawImage(Image image, AffineTransform at)
+     {
+         graphics.setComposite(getGraphicsState().getNonStrokeJavaComposite());
+         graphics.setClip(getGraphicsState().getCurrentClippingPath());
+-        int width = awtImage.getWidth(null);
+-        int height = awtImage.getHeight(null);
++        int width = image.getWidth(null);
++        int height = image.getHeight(null);
++
+         AffineTransform imageTransform = new AffineTransform(at);
+         imageTransform.scale(1.0 / width, -1.0 / height);
+         imageTransform.translate(0, -height);
+-        graphics.drawImage(awtImage, imageTransform, null);
++
++        // Scaling an image directly over factors of 2x created crappy results,
++        // but using java-image-scaling all the times slows down quite a bit.
++        // So it's used only if the highQuality property in Pagedrawer is set.
++        if (image instanceof BufferedImage /*&& highQuality*/)
++        {
++            AffineTransform result=new AffineTransform(graphics.getTransform());
++            result.concatenate(imageTransform);
++            result.concatenate( graphics.getDeviceConfiguration().getNormalizingTransform() );
++            int targetWidth=(int)(width*result.getScaleX());
++            int targetHeight=(int)(height*result.getScaleY());
++            if (targetWidth>=3 && targetHeight>=3)
++            {
++                ResampleOp  resampleOp = new ResampleOp(targetWidth,targetHeight);
++                if (highQuality)
++                {
++                   resampleOp.setUnsharpenMask(AdvancedResizeOp.UnsharpenMask.Normal);
++                   resampleOp.setFilter(ResampleFilters.getLanczos3Filter());
++                }
++                else
++                {
++                   // cubic hf provides good compromise between sharpness and speed
++                   resampleOp.setFilter(ResampleFilters.getBiCubicHighFreqResponse());
++                   // triangle is slightly fuzzier, similar speed
++                   // resampleOp.setFilter(ResampleFilters.getTriangleFilter());
++                }
++
++                image = resampleOp.filter((BufferedImage)image, null);
++                width=targetWidth;
++                height=targetHeight;
++
++                imageTransform = new AffineTransform(at);
++                imageTransform.scale(1.0 / targetWidth, -1.0 / targetHeight);
++                imageTransform.translate(0, -targetHeight);
++            }
++        }
++
++        graphics.drawImage(image, imageTransform, null);
+     }
+ 
+     /**

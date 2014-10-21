@@ -16,15 +16,11 @@
  */
 package org.apache.pdfbox.pdmodel.interactive.form;
 
-import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSName;
-
-import org.apache.pdfbox.pdmodel.common.COSArrayList;
+import org.apache.pdfbox.pdmodel.common.COSObjectable;
 
 /**
  * Radio button fields contain a set of related buttons that can each be on or off.
@@ -33,34 +29,30 @@ import org.apache.pdfbox.pdmodel.common.COSArrayList;
  */
 public final class PDRadioButton extends PDButton
 {
-    /**
-     * A Ff flag.
-     */
-    public static final int FLAG_RADIOS_IN_UNISON = 1 << 25;
 
     /**
-     * @param theAcroForm The acroForm for this field.
-     * @param field The field that makes up the radio collection.
-     *
-     * {@inheritDoc}
+     * Constructor.
+     * 
+     * @param theAcroForm The form that this field is part of.
+     * @param field the PDF object to represent as a field.
+     * @param parentNode the parent node of the node to be created
      */
-    public PDRadioButton(PDAcroForm theAcroForm, COSDictionary field)
+    public PDRadioButton(PDAcroForm theAcroForm, COSDictionary field, PDFieldTreeNode parentNode)
     {
-        super(theAcroForm,field);
+        super(theAcroForm, field, parentNode);
     }
 
     /**
      * From the PDF Spec <br/>
-     * If set, a group of radio buttons within a radio button field that
-     * use the same value for the on state will turn on and off in unison; that is if
-     * one is checked, they are all checked. If clear, the buttons are mutually exclusive
-     * (the same behavior as HTML radio buttons).
+     * If set, a group of radio buttons within a radio button field that use the same value for the on state will turn
+     * on and off in unison; that is if one is checked, they are all checked. If clear, the buttons are mutually
+     * exclusive (the same behavior as HTML radio buttons).
      *
      * @param radiosInUnison The new flag for radiosInUnison.
      */
     public void setRadiosInUnison(boolean radiosInUnison)
     {
-        getDictionary().setFlag( COSName.FF, FLAG_RADIOS_IN_UNISON, radiosInUnison );
+        getDictionary().setFlag(COSName.FF, FLAG_RADIOS_IN_UNISON, radiosInUnison);
     }
 
     /**
@@ -69,100 +61,46 @@ public final class PDRadioButton extends PDButton
      */
     public boolean isRadiosInUnison()
     {
-        return getDictionary().getFlag( COSName.FF, FLAG_RADIOS_IN_UNISON );
+        return getDictionary().getFlag(COSName.FF, FLAG_RADIOS_IN_UNISON);
     }
 
-    /**
-     * This setValue method iterates the collection of radiobuttons
-     * and checks or unchecks each radiobutton according to the
-     * given value.
-     * If the value is not represented by any of the radiobuttons,
-     * then none will be checked.
-     *
-     * {@inheritDoc}
-     */
     @Override
-    public void setValue(String value) throws IOException
+    public COSName getValue()
     {
-        getDictionary().setString( COSName.V, value );
-        List kids = getKids();
-        for (Object kid : kids)
-        {
-            PDField field = (PDField) kid;
-            if ( field instanceof PDCheckbox )
-            {
-                PDCheckbox btn = (PDCheckbox)field;
-                if( btn.getOnValue().equals(value) )
-                {
-                    btn.check();
-                }
-                else
-                {
-                    btn.unCheck();
-                }
-            }
-        }
+        return getDictionary().getCOSName(COSName.V);
     }
 
-    /**
-     * getValue gets the fields value to as a string.
-     *
-     * @return The string value of this field.
-     *
-     * @throws IOException If there is an error getting the value.
-     */
     @Override
-    public String getValue() throws IOException
+    public void setValue(Object value)
     {
-        String retval = null;
-        List kids = getKids();
-        for (Object kid : kids)
+        if (value == null)
         {
-            PDField field = (PDField) kid;
-            if ( field instanceof PDCheckbox )
+            getDictionary().removeItem(COSName.V);
+        }
+        else if (value instanceof COSName)
+        {
+            getDictionary().setItem(COSName.V, (COSName) value);
+            List<COSObjectable> kids = getKids();
+            for (COSObjectable kid : kids)
             {
-                PDCheckbox btn = (PDCheckbox)field;
-                if( btn.isChecked() )
+                if (kid instanceof PDCheckbox)
                 {
-                    retval = btn.getOnValue();
+                    PDCheckbox btn = (PDCheckbox) kid;
+                    if (btn.getOnValue().equals(value))
+                    {
+                        btn.check();
+                    }
+                    else
+                    {
+                        btn.unCheck();
+                    }
                 }
             }
-        }
-        if( retval == null )
-        {
-            retval = getDictionary().getNameAsString( COSName.V );
-        }
-        return retval;
-    }
-
-
-    /**
-     * This will return a list of PDField objects that are part of this radio collection.
-     *
-     * @see PDField#getWidget()
-     * @return A list of PDWidget objects.
-     * @throws IOException if there is an error while creating the children objects.
-     */
-    @SuppressWarnings("unchecked")
-    public List getKids() throws IOException
-    {
-        COSArray kids = (COSArray)getDictionary().getDictionaryObject(COSName.KIDS);
-        if( kids != null )
-        {
-            List kidsList = new ArrayList();
-            for (int i = 0; i < kids.size(); i++)
-            {
-                PDField field = PDFieldFactory.createField( getAcroForm(), (COSDictionary)kids.getObject(i) );
-                if (field != null)
-                {
-                    kidsList.add( field );
-                }
-            }
-            return new COSArrayList( kidsList, kids );
         }
         else
         {
-            return new ArrayList();
+            throw new RuntimeException("The value of a redio button has to be a name object.");
         }
     }
+
 }

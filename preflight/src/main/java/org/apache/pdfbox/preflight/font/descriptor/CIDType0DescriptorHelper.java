@@ -38,8 +38,8 @@ import org.apache.pdfbox.cos.COSDocument;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSStream;
 import org.apache.pdfbox.pdmodel.common.PDStream;
-import org.apache.pdfbox.pdmodel.font.PDFont;
-import org.apache.pdfbox.pdmodel.font.PDFontDescriptorDictionary;
+import org.apache.pdfbox.pdmodel.font.PDFontDescriptor;
+import org.apache.pdfbox.pdmodel.font.PDFontLike;
 import org.apache.pdfbox.preflight.PreflightContext;
 import org.apache.pdfbox.preflight.ValidationResult;
 import org.apache.pdfbox.preflight.ValidationResult.ValidationError;
@@ -49,21 +49,18 @@ import org.apache.pdfbox.preflight.utils.COSUtils;
 
 public class CIDType0DescriptorHelper extends FontDescriptorHelper<CIDType0Container>
 {
-
-    public CIDType0DescriptorHelper(PreflightContext context, PDFont font, CIDType0Container fontContainer)
+    public CIDType0DescriptorHelper(PreflightContext context, PDFontLike font, CIDType0Container fontContainer)
     {
         super(context, font, fontContainer);
     }
 
     @Override
-    public PDStream extractFontFile(PDFontDescriptorDictionary fontDescriptor)
+    public PDStream extractFontFile(PDFontDescriptor fontDescriptor)
     {
         PDStream ff3 = fontDescriptor.getFontFile3();
         if (ff3 != null)
         {
-            /*
-             * Stream validation should be done by the StreamValidateHelper. Process font specific check
-             */
+            // Stream validation should be done by the StreamValidateHelper. Process font specific check
             COSStream stream = ff3.getStream();
             if (stream == null)
             {
@@ -73,10 +70,8 @@ public class CIDType0DescriptorHelper extends FontDescriptorHelper<CIDType0Conta
             }
             else
             {
-                /*
-                 * Lengthx aren't mandatory for this type of font But the Subtype is a mandatory field with specific
-                 * values
-                 */
+                // Length1/2/3 aren't mandatory for this type of font
+                // But the Subtype is a mandatory field with specific values
                 String st = stream.getNameAsString(COSName.SUBTYPE);
                 if (!(FONT_DICTIONARY_VALUE_TYPE0C.equals(st) || FONT_DICTIONARY_VALUE_TYPE1C.equals(st)))
                 {
@@ -96,12 +91,12 @@ public class CIDType0DescriptorHelper extends FontDescriptorHelper<CIDType0Conta
      * 
      * @param pfDescriptor
      */
-    protected void checkCIDSet(PDFontDescriptorDictionary pfDescriptor)
+    protected void checkCIDSet(PDFontDescriptor pfDescriptor)
     {
         if (FontValidator.isSubSet(pfDescriptor.getFontName()))
         {
             COSDocument cosDocument = context.getDocument().getDocument();
-            COSBase cidset = pfDescriptor.getCOSDictionary().getItem(COSName.getPDFName(FONT_DICTIONARY_KEY_CIDSET));
+            COSBase cidset = pfDescriptor.getCOSObject().getItem(COSName.getPDFName(FONT_DICTIONARY_KEY_CIDSET));
             if (cidset == null || !COSUtils.isStream(cidset, cosDocument))
             {
                 this.fContainer.push(new ValidationResult.ValidationError(ERROR_FONTS_CIDSET_MISSING_FOR_SUBSET,
@@ -111,25 +106,11 @@ public class CIDType0DescriptorHelper extends FontDescriptorHelper<CIDType0Conta
     }
 
     @Override
-    protected void processFontFile(PDFontDescriptorDictionary fontDescriptor, PDStream fontFile)
+    protected void processFontFile(PDFontDescriptor fontDescriptor, PDStream fontFile)
     {
-        /*
-         * try to load the font using the java.awt.font object. if the font is invalid, an exception will be thrown
-         */
-        try
-        {
-            CFFParser cffParser = new CFFParser();
-            List<CFFFont> lCFonts = cffParser.parse(fontFile.getByteArray());
-            if (lCFonts == null || lCFonts.isEmpty())
-            {
-                this.fContainer.push(new ValidationError(ERROR_FONTS_CID_DAMAGED, "The FontFile can't be read"));
-            }
-            fContainer.setlCFonts(lCFonts);
-        }
-        catch (IOException e)
+        if (font.isDamaged())
         {
             this.fContainer.push(new ValidationError(ERROR_FONTS_CID_DAMAGED, "The FontFile can't be read"));
         }
     }
-
 }

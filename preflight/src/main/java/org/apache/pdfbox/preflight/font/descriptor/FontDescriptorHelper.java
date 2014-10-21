@@ -49,9 +49,8 @@ import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.common.PDMetadata;
 import org.apache.pdfbox.pdmodel.common.PDStream;
-import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDFontDescriptor;
-import org.apache.pdfbox.pdmodel.font.PDFontDescriptorDictionary;
+import org.apache.pdfbox.pdmodel.font.PDFontLike;
 import org.apache.pdfbox.preflight.PreflightContext;
 import org.apache.pdfbox.preflight.ValidationResult.ValidationError;
 import org.apache.pdfbox.preflight.font.container.FontContainer;
@@ -67,11 +66,11 @@ public abstract class FontDescriptorHelper<T extends FontContainer>
     protected T fContainer;
 
     protected PreflightContext context;
-    protected PDFont font;
+    protected PDFontLike font;
 
-    protected PDFontDescriptorDictionary fontDescriptor;
+    protected PDFontDescriptor fontDescriptor;
 
-    public FontDescriptorHelper(PreflightContext context, PDFont font, T fontContainer)
+    public FontDescriptorHelper(PreflightContext context, PDFontLike font, T fontContainer)
     {
         super();
         this.fContainer = fontContainer;
@@ -83,11 +82,11 @@ public abstract class FontDescriptorHelper<T extends FontContainer>
     {
         PDFontDescriptor fd = this.font.getFontDescriptor();
         // Only a PDFontDescriptorDictionary provides a way to embedded the font program.
-        if (fd != null && fd instanceof PDFontDescriptorDictionary)
+        if (fd != null)
         {
-            fontDescriptor = (PDFontDescriptorDictionary) fd;
+            fontDescriptor = fd;
 
-            if (checkMandatoryFields(fontDescriptor.getCOSDictionary()))
+            if (checkMandatoryFields(fontDescriptor.getCOSObject()))
             {
                 if (hasOnlyOneFontFile(fontDescriptor))
                 {
@@ -124,24 +123,74 @@ public abstract class FontDescriptorHelper<T extends FontContainer>
 
     protected boolean checkMandatoryFields(COSDictionary fDescriptor)
     {
+        String missingFields = "";
         boolean areFieldsPresent = fDescriptor.containsKey(FONT_DICTIONARY_KEY_FONTNAME);
-        areFieldsPresent &= fDescriptor.containsKey(FONT_DICTIONARY_KEY_FLAGS);
-        areFieldsPresent &= fDescriptor.containsKey(FONT_DICTIONARY_KEY_ITALICANGLE);
-        areFieldsPresent &= fDescriptor.containsKey(FONT_DICTIONARY_KEY_CAPHEIGHT);
-        areFieldsPresent &= fDescriptor.containsKey(FONT_DICTIONARY_KEY_FONTBBOX);
-        areFieldsPresent &= fDescriptor.containsKey(FONT_DICTIONARY_KEY_ASCENT);
-        areFieldsPresent &= fDescriptor.containsKey(FONT_DICTIONARY_KEY_DESCENT);
-        areFieldsPresent &= fDescriptor.containsKey(FONT_DICTIONARY_KEY_STEMV);
-        areFieldsPresent &= fDescriptor.containsKey(COSName.FONT_NAME);
         if (!areFieldsPresent)
         {
+            missingFields += FONT_DICTIONARY_KEY_FONTNAME + ", ";
+        }
+        boolean flags = fDescriptor.containsKey(FONT_DICTIONARY_KEY_FLAGS);
+        areFieldsPresent &= flags;
+        if (!flags)
+        {
+            missingFields += FONT_DICTIONARY_KEY_FLAGS + ", ";
+        }
+        boolean italicAngle = fDescriptor.containsKey(FONT_DICTIONARY_KEY_ITALICANGLE);
+        areFieldsPresent &= italicAngle;
+        if (!italicAngle)
+        {
+            missingFields += FONT_DICTIONARY_KEY_ITALICANGLE + ", ";
+        }
+        boolean capHeight = fDescriptor.containsKey(FONT_DICTIONARY_KEY_CAPHEIGHT);
+        areFieldsPresent &= capHeight;
+        if (!capHeight)
+        {
+            missingFields += FONT_DICTIONARY_KEY_CAPHEIGHT + ", ";
+        }
+        boolean fontBox = fDescriptor.containsKey(FONT_DICTIONARY_KEY_FONTBBOX);
+        areFieldsPresent &= fontBox;
+        if (!fontBox)
+        {
+            missingFields += FONT_DICTIONARY_KEY_FONTBBOX + ", ";
+        }
+        boolean ascent = fDescriptor.containsKey(FONT_DICTIONARY_KEY_ASCENT);
+        areFieldsPresent &= ascent;
+        if (!ascent)
+        {
+            missingFields += FONT_DICTIONARY_KEY_ASCENT + ", ";
+        }
+        boolean descent = fDescriptor.containsKey(FONT_DICTIONARY_KEY_DESCENT);
+        areFieldsPresent &= descent;
+        if (!descent)
+        {
+            missingFields += FONT_DICTIONARY_KEY_DESCENT + ", ";
+        }
+        boolean stemV = fDescriptor.containsKey(FONT_DICTIONARY_KEY_STEMV);
+        areFieldsPresent &= stemV;
+        if (!stemV)
+        {
+            missingFields += FONT_DICTIONARY_KEY_STEMV + ", ";
+        }
+        boolean name = fDescriptor.containsKey(COSName.FONT_NAME);
+        areFieldsPresent &= name;
+        if (!name)
+        {
+            missingFields += COSName.FONT_NAME + ", ";
+        }
+        if (!areFieldsPresent)
+        {
+            if (missingFields.endsWith(", "))
+            {
+                missingFields = missingFields.substring(0, missingFields.length() - 2);
+            }
             this.fContainer.push(new ValidationError(ERROR_FONTS_DESCRIPTOR_INVALID,
-                    "Some mandatory fields are missing from the FontDescriptor"));
+                    this.font.getName()
+                    + ": some mandatory fields are missing from the FontDescriptor: " + missingFields + "."));
         }
         return areFieldsPresent;
     }
 
-    public abstract PDStream extractFontFile(PDFontDescriptorDictionary fontDescriptor);
+    public abstract PDStream extractFontFile(PDFontDescriptor fontDescriptor);
 
     /**
      * Return true if the FontDescriptor has only one FontFile entry.
@@ -149,7 +198,7 @@ public abstract class FontDescriptorHelper<T extends FontContainer>
      * @param fontDescriptor
      * @return
      */
-    protected boolean hasOnlyOneFontFile(PDFontDescriptorDictionary fontDescriptor)
+    protected boolean hasOnlyOneFontFile(PDFontDescriptor fontDescriptor)
     {
         PDStream ff1 = fontDescriptor.getFontFile();
         PDStream ff2 = fontDescriptor.getFontFile2();
@@ -157,7 +206,7 @@ public abstract class FontDescriptorHelper<T extends FontContainer>
         return (ff1 != null ^ ff2 != null ^ ff3 != null);
     }
 
-    protected boolean fontFileNotEmbedded(PDFontDescriptorDictionary fontDescriptor)
+    protected boolean fontFileNotEmbedded(PDFontDescriptor fontDescriptor)
     {
         PDStream ff1 = fontDescriptor.getFontFile();
         PDStream ff2 = fontDescriptor.getFontFile2();
@@ -165,7 +214,7 @@ public abstract class FontDescriptorHelper<T extends FontContainer>
         return (ff1 == null && ff2 == null && ff3 == null);
     }
 
-    protected abstract void processFontFile(PDFontDescriptorDictionary fontDescriptor, PDStream fontFile);
+    protected abstract void processFontFile(PDFontDescriptor fontDescriptor, PDStream fontFile);
 
     /**
      * Type0, Type1 and TrueType FontValidator call this method to check the FontFile meta data.

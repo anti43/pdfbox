@@ -67,10 +67,9 @@ public class TTFParser
      * @return A true type font.
      * @throws IOException If there is an error parsing the true type font.
      */
-    public TrueTypeFont parseTTF(String ttfFile) throws IOException
+    public TrueTypeFont parse(String ttfFile) throws IOException
     {
-        RAFDataStream raf = new RAFDataStream(ttfFile, "r");
-        return parseTTF(raf);
+        return parse(new File(ttfFile));
     }
 
     /**
@@ -80,10 +79,9 @@ public class TTFParser
      * @return A true type font.
      * @throws IOException If there is an error parsing the true type font.
      */
-    public TrueTypeFont parseTTF(File ttfFile) throws IOException
+    public TrueTypeFont parse(File ttfFile) throws IOException
     {
-        RAFDataStream raf = new RAFDataStream(ttfFile, "r");
-        return parseTTF(raf);
+        return parse(new RAFDataStream(ttfFile, "r"));
     }
 
     /**
@@ -93,9 +91,9 @@ public class TTFParser
      * @return A true type font.
      * @throws IOException If there is an error parsing the true type font.
      */
-    public TrueTypeFont parseTTF(InputStream ttfData) throws IOException
+    public TrueTypeFont parse(InputStream ttfData) throws IOException
     {
-        return parseTTF(new MemoryTTFDataStream(ttfData));
+        return parse(new MemoryTTFDataStream(ttfData));
     }
 
     /**
@@ -105,9 +103,9 @@ public class TTFParser
      * @return A true type font.
      * @throws IOException If there is an error parsing the true type font.
      */
-    public TrueTypeFont parseTTF(TTFDataStream raf) throws IOException
+    public TrueTypeFont parse(TTFDataStream raf) throws IOException
     {
-        TrueTypeFont font = new TrueTypeFont(raf);
+        TrueTypeFont font = newFont(raf);
         font.setVersion(raf.read32Fixed());
         int numberOfTables = raf.readUnsignedShort();
         int searchRange = raf.readUnsignedShort();
@@ -125,6 +123,11 @@ public class TTFParser
         }
 
         return font;
+    }
+
+    protected TrueTypeFont newFont(TTFDataStream raf)
+    {
+        return new TrueTypeFont(raf);
     }
 
     /**
@@ -189,7 +192,7 @@ public class TTFParser
         }
 
         // check others mandatory tables
-        if (!isEmbedded && font.getCMAP() == null)
+        if (!isEmbedded && font.getCmap() == null)
         {
             throw new IOException("cmap is mandatory");
         }
@@ -197,61 +200,66 @@ public class TTFParser
 
     private TTFTable readTableDirectory(TTFDataStream raf) throws IOException
     {
-        TTFTable retval = null;
+        TTFTable table = null;
         String tag = raf.readString(4);
-        if (tag.equals(CMAPTable.TAG))
+        if (tag.equals(CmapTable.TAG))
         {
-            retval = new CMAPTable();
+            table = new CmapTable();
         }
         else if (tag.equals(GlyphTable.TAG))
         {
-            retval = new GlyphTable();
+            table = new GlyphTable();
         }
         else if (tag.equals(HeaderTable.TAG))
         {
-            retval = new HeaderTable();
+            table = new HeaderTable();
         }
         else if (tag.equals(HorizontalHeaderTable.TAG))
         {
-            retval = new HorizontalHeaderTable();
+            table = new HorizontalHeaderTable();
         }
         else if (tag.equals(HorizontalMetricsTable.TAG))
         {
-            retval = new HorizontalMetricsTable();
+            table = new HorizontalMetricsTable();
         }
         else if (tag.equals(IndexToLocationTable.TAG))
         {
-            retval = new IndexToLocationTable();
+            table = new IndexToLocationTable();
         }
         else if (tag.equals(MaximumProfileTable.TAG))
         {
-            retval = new MaximumProfileTable();
+            table = new MaximumProfileTable();
         }
         else if (tag.equals(NamingTable.TAG))
         {
-            retval = new NamingTable();
+            table = new NamingTable();
         }
         else if (tag.equals(OS2WindowsMetricsTable.TAG))
         {
-            retval = new OS2WindowsMetricsTable();
+            table = new OS2WindowsMetricsTable();
         }
         else if (tag.equals(PostScriptTable.TAG))
         {
-            retval = new PostScriptTable();
+            table = new PostScriptTable();
         }
         else if (tag.equals(DigitalSignatureTable.TAG))
         {
-            retval = new DigitalSignatureTable();
+            table = new DigitalSignatureTable();
         }
         else
         {
-            // unknown table type but read it anyway.
-            retval = new TTFTable();
+            table = readTable(tag);
         }
-        retval.setTag(tag);
-        retval.setCheckSum(raf.readUnsignedInt());
-        retval.setOffset(raf.readUnsignedInt());
-        retval.setLength(raf.readUnsignedInt());
-        return retval;
+        table.setTag(tag);
+        table.setCheckSum(raf.readUnsignedInt());
+        table.setOffset(raf.readUnsignedInt());
+        table.setLength(raf.readUnsignedInt());
+        return table;
+    }
+
+    protected TTFTable readTable(String tag)
+    {
+        // unknown table type but read it anyway.
+        return new TTFTable();
     }
 }

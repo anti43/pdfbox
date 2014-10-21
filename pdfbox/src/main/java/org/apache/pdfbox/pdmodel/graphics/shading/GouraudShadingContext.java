@@ -14,93 +14,76 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.pdfbox.pdmodel.graphics.shading;
 
 import java.awt.PaintContext;
 import java.awt.Point;
-import java.awt.Transparency;
-import java.awt.color.ColorSpace;
+import java.awt.Rectangle;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Point2D;
 import java.awt.image.ColorModel;
-import java.awt.image.ComponentColorModel;
-import java.awt.image.DataBuffer;
 import java.awt.image.Raster;
 import java.awt.image.WritableRaster;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import javax.imageio.stream.ImageInputStream;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.pdmodel.common.PDRange;
-import org.apache.pdfbox.pdmodel.graphics.color.PDColorSpace;
 import org.apache.pdfbox.util.Matrix;
 
 /**
- * Shades Gouraud triangles for  Type4ShadingContext and Type5ShadingContext.
+ * Shades Gouraud triangles for Type4ShadingContext and Type5ShadingContext.
+ *
  * @author Andreas Lehmkühler
  * @author Tilman Hausherr
+ * @author Shaola Ren
  */
-abstract class GouraudShadingContext implements PaintContext
+abstract class GouraudShadingContext extends TriangleBasedShadingContext implements PaintContext
 {
     private static final Log LOG = LogFactory.getLog(GouraudShadingContext.class);
 
-    private ColorModel outputColorModel;
-    private PDColorSpace shadingColorSpace;
+    /**
+     * triangle list.
+     */
+    protected ArrayList<ShadedTriangle> triangleList;
 
-    /** number of color components. */
-    protected int numberOfColorComponents;
-
-    /** triangle list. */
-    protected ArrayList<GouraudTriangle> triangleList;
-
-    /** bits per coordinate. */
-    protected int bitsPerCoordinate;
-
-    /** bits per color component. */
-    protected int bitsPerColorComponent;
-
-    /** background values.*/
+    /**
+     * background values.
+     */
     protected float[] background;
+    protected int rgbBackground;
 
-    private final boolean hasFunction;
-    private final PDShading gouraudShadingType;
+    protected HashMap<Point, Integer> pixelTable;
 
     /**
      * Constructor creates an instance to be used for fill operations.
+     *
      * @param shading the shading type to be used
      * @param colorModel the color model to be used
      * @param xform transformation for user to device space
      * @param ctm current transformation matrix
-     * @param pageHeight height of the current page
      * @throws IOException if something went wrong
      */
     protected GouraudShadingContext(PDShading shading, ColorModel colorModel, AffineTransform xform,
-                                    Matrix ctm, int pageHeight) throws IOException
+            Matrix ctm, Rectangle dBounds) throws IOException
     {
-        gouraudShadingType = shading;
-        triangleList = new ArrayList<GouraudTriangle>();
-        hasFunction = shading.getFunction() != null;
-        LOG.debug("hasFunction: " + hasFunction);
-
-        shadingColorSpace = shading.getColorSpace();
-        LOG.debug("colorSpace: " + shadingColorSpace);
-
-        numberOfColorComponents = hasFunction ? 1 : shadingColorSpace.getNumberOfComponents();
-        LOG.debug("numberOfColorComponents: " + numberOfColorComponents);
-
-        LOG.debug("BBox: " + shading.getBBox());
+        super(shading, colorModel, xform, ctm, dBounds);
+        triangleList = new ArrayList<ShadedTriangle>();
         LOG.debug("Background: " + shading.getBackground());
-
-        // create the output color model using RGB+alpha as color space
-        ColorSpace outputCS = ColorSpace.getInstance(ColorSpace.CS_sRGB);
-        outputColorModel = new ComponentColorModel(outputCS, true, false, Transparency.TRANSLUCENT,
-                DataBuffer.TYPE_BYTE);
+        COSArray bg = shading.getBackground();
+        if (bg != null)
+        {
+            background = bg.toFloatArray();
+            rgbBackground = convertToRGB(background);
+        }
     }
 
     /**
      * Read a vertex from the bit input stream performs interpolations.
+     *
      * @param input bit input stream
      * @param flag the flag or any value if not relevant
      * @param maxSrcCoord max value for source coordinate (2^bits-1)
@@ -111,8 +94,9 @@ abstract class GouraudShadingContext implements PaintContext
      * @return a new vertex with the flag and the interpolated values
      * @throws IOException if something went wrong
      */
-    protected Vertex readVertex(ImageInputStream input, byte flag, long maxSrcCoord, long maxSrcColor,
-                                PDRange rangeX, PDRange rangeY, PDRange[] colRangeTab) throws IOException
+    protected Vertex readVertex(ImageInputStream input, long maxSrcCoord, long maxSrcColor,
+            PDRange rangeX, PDRange rangeY, PDRange[] colRangeTab, Matrix ctm,
+            AffineTransform xform) throws IOException
     {
         float[] colorComponentTab = new float[numberOfColorComponents];
         long x = input.readBits(bitsPerCoordinate);
@@ -120,39 +104,24 @@ abstract class GouraudShadingContext implements PaintContext
         double dstX = interpolate(x, maxSrcCoord, rangeX.getMin(), rangeX.getMax());
         double dstY = interpolate(y, maxSrcCoord, rangeY.getMin(), rangeY.getMax());
         LOG.debug("coord: " + String.format("[%06X,%06X] -> [%f,%f]", x, y, dstX, dstY));
+        Point2D tmp = new Point2D.Double(dstX, dstY);
+        transformPoint(tmp, ctm, xform);
+
         for (int n = 0; n < numberOfColorComponents; ++n)
         {
             int color = (int) input.readBits(bitsPerColorComponent);
-            colorComponentTab[n] = interpolate(color, maxSrcColor, colRangeTab[n].getMin(), colRangeTab[n].getMax());
-            LOG.debug("color[" + n + "]: " + color + "/" + String.format("%02X", color)
-                    + " -> color[" + n + "]: " + colorComponentTab[n]);
+            colorComponentTab[n] = (float) interpolate(color, maxSrcColor, colRangeTab[n].getMin(), colRangeTab[n].getMax());
+            LOG.debug("color[" + n + "]: " + color + "/" + String.format("%02x", color)
+                    + "-> color[" + n + "]: " + colorComponentTab[n]);
         }
-        return new Vertex(flag, new Point2D.Double(dstX, dstY), colorComponentTab);
+        return new Vertex(tmp, colorComponentTab);
     }
 
-    /**
-     * Transforms vertices from shading to user space (if applicable) and from user to device space.
-     * @param vertexList list of vertices
-     * @param xform transformation for user to device space
-     * @param ctm current transformation matrix
-     */
-    protected void transformVertices(ArrayList<Vertex> vertexList, Matrix ctm, AffineTransform xform)
+    protected HashMap<Point, Integer> calcPixelTable()
     {
-        for (Vertex v : vertexList)
-        {
-            LOG.debug(v);
-
-            // this segment "inspired" by RadialShadingContext
-            if (ctm != null)
-            {
-                // transform from shading to user space
-                ctm.createAffineTransform().transform(v.point, v.point);
-            }
-            // transform from user to device space
-            xform.transform(v.point, v.point);
-
-            LOG.debug(v);
-        }
+        HashMap<Point, Integer> map = new HashMap<Point, Integer>();
+        super.calcPixelTable(triangleList, map);
+        return map;
     }
 
     @Override
@@ -171,6 +140,7 @@ abstract class GouraudShadingContext implements PaintContext
 
     /**
      * Calculate the interpolation, see p.345 pdf spec 1.7.
+     *
      * @param src src value
      * @param srcMax max src value (2^bits-1)
      * @param dstMin min dst value
@@ -191,68 +161,47 @@ abstract class GouraudShadingContext implements PaintContext
         {
             for (int row = 0; row < h; row++)
             {
+                int currentY = y + row;
+                if (bboxRect != null)
+                {
+                    if (currentY < minBBoxY || currentY > maxBBoxY)
+                    {
+                        continue;
+                    }
+                }
                 for (int col = 0; col < w; col++)
                 {
-                    Point2D p = new Point(x + col, y + row);
-                    GouraudTriangle triangle = null;
-                    for (GouraudTriangle tryTriangle : triangleList)
+                    int currentX = x + col;
+                    if (bboxRect != null)
                     {
-                        if (tryTriangle.contains(p))
+                        if (currentX < minBBoxX || currentX > maxBBoxX)
                         {
-                            triangle = tryTriangle;
-                            break;
+                            continue;
                         }
                     }
-                    float[] values;
-                    if (triangle != null)
+                    Point p = new Point(currentX, currentY);
+                    int value;
+                    if (pixelTable.containsKey(p))
                     {
-                        double[] weights = triangle.getWeights(p);
-                        values = new float[numberOfColorComponents];
-                        for (int i = 0; i < numberOfColorComponents; ++i)
-                        {
-                            values[i] = (float) (triangle.colorA[i] * weights[0]
-                                    + triangle.colorB[i] * weights[1]
-                                    + triangle.colorC[i] * weights[2]);
-                        }
+                        value = pixelTable.get(p);
                     }
                     else
                     {
                         if (background != null)
                         {
-                            values = background;
+                            value = rgbBackground;
                         }
                         else
                         {
                             continue;
                         }
                     }
-
-                    if (hasFunction)
-                    {
-                        try
-                        {
-                            values = gouraudShadingType.evalFunction(values);
-                        }
-                        catch (IOException exception)
-                        {
-                            LOG.error("error while processing a function", exception);
-                        }
-                    }
-
-                    // convert from shading color space to to RGB
-                    try
-                    {
-                        values = shadingColorSpace.toRGB(values);
-                    }
-                    catch (IOException exception)
-                    {
-                        LOG.error("error processing color space", exception);
-                    }
-
                     int index = (row * w + col) * 4;
-                    data[index] = (int) (values[0] * 255);
-                    data[index + 1] = (int) (values[1] * 255);
-                    data[index + 2] = (int) (values[2] * 255);
+                    data[index] = value & 255;
+                    value >>= 8;
+                    data[index + 1] = value & 255;
+                    value >>= 8;
+                    data[index + 2] = value & 255;
                     data[index + 3] = 255;
                 }
             }

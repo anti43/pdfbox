@@ -28,6 +28,7 @@ public class PDShadingType3 extends PDShadingType2
 {
     /**
      * Constructor using the given shading dictionary.
+     *
      * @param shadingDictionary the dictionary for this shading
      */
     public PDShadingType3(COSDictionary shadingDictionary)
@@ -42,8 +43,8 @@ public class PDShadingType3 extends PDShadingType2
     }
 
     @Override
-    public Paint toPaint(Matrix matrix, int pageHeight)
+    public Paint toPaint(Matrix matrix)
     {
-        return new RadialShadingPaint(this, matrix, pageHeight);
+        return new RadialShadingPaint(this, matrix);
     }
 }

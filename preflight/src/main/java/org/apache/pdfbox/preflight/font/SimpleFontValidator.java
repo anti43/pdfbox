@@ -25,7 +25,7 @@ import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_FONTS_DICTION
 
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSName;
-import org.apache.pdfbox.pdmodel.font.PDFont;
+import org.apache.pdfbox.pdmodel.font.PDFontLike;
 import org.apache.pdfbox.preflight.PreflightContext;
 import org.apache.pdfbox.preflight.ValidationResult.ValidationError;
 import org.apache.pdfbox.preflight.exception.ValidationException;
@@ -33,20 +33,25 @@ import org.apache.pdfbox.preflight.font.container.FontContainer;
 
 public abstract class SimpleFontValidator<T extends FontContainer> extends FontValidator<T>
 {
+    protected PDFontLike font;
+    protected COSDictionary fontDictionary;
 
-    public SimpleFontValidator(PreflightContext context, PDFont font, T fContainer)
+    public SimpleFontValidator(PreflightContext context, PDFontLike font, COSDictionary fontDictionary, T fContainer)
     {
-        super(context, font, fContainer);
+        super(context, fontDictionary, fContainer);
+        this.fontDictionary = fontDictionary;
+        this.font = font;
     }
 
     /**
-     * Call this method to validate the font wrapped by this object. If the validation failed, the error is updated in
-     * the FontContainer with the right error code.
-     * 
-     * Errors that are saved in the container will be added on the PreflightContext if the font is used later.
-     * 
-     * @return
+     * Call this method to validate the font wrapped by this object. If the
+     * validation failed, the error is updated in the FontContainer with the
+     * right error code.
+     *
+     * Errors that are saved in the container will be added on the
+     * PreflightContext if the font is used later.
      */
+    @Override
     public void validate() throws ValidationException
     {
         checkMandatoryField();
@@ -60,18 +65,52 @@ public abstract class SimpleFontValidator<T extends FontContainer> extends FontV
 
     protected void checkMandatoryField()
     {
-        COSDictionary fontDictionary = (COSDictionary) font.getCOSObject();
-        boolean areFieldsPResent = fontDictionary.containsKey(COSName.TYPE);
-        areFieldsPResent &= fontDictionary.containsKey(COSName.SUBTYPE);
-        areFieldsPResent &= fontDictionary.containsKey(COSName.BASE_FONT);
-        areFieldsPResent &= fontDictionary.containsKey(COSName.FIRST_CHAR);
-        areFieldsPResent &= fontDictionary.containsKey(COSName.LAST_CHAR);
-        areFieldsPResent &= fontDictionary.containsKey(COSName.WIDTHS);
-
-        if (!areFieldsPResent)
+        String missingFields = "";
+        boolean areFieldsPresent = fontDictionary.containsKey(COSName.TYPE);
+        if (!areFieldsPresent)
         {
+            missingFields = "type, ";
+        }
+        boolean subType = fontDictionary.containsKey(COSName.SUBTYPE);
+        areFieldsPresent &= subType;
+        if (!subType)
+        {
+            missingFields += "subType, ";
+        }
+        boolean baseFont = fontDictionary.containsKey(COSName.BASE_FONT);
+        areFieldsPresent &= baseFont;
+        if (!baseFont)
+        {
+            missingFields += "baseFont, ";
+        }
+        boolean firstChar = fontDictionary.containsKey(COSName.FIRST_CHAR);
+        areFieldsPresent &= firstChar;
+        if (!firstChar)
+        {
+            missingFields += "firstChar, ";
+        }
+        boolean lastChar = fontDictionary.containsKey(COSName.LAST_CHAR);
+        areFieldsPresent &= lastChar;
+        if (!lastChar)
+        {
+            missingFields += "lastChar, ";
+        }
+        boolean widths = fontDictionary.containsKey(COSName.WIDTHS);
+        areFieldsPresent &= widths;
+        if (!widths)
+        {
+            missingFields += "widths, ";
+        }
+
+        if (!areFieldsPresent)
+        {
+            if (missingFields.endsWith(", "))
+            {
+                missingFields = missingFields.substring(0, missingFields.length() - 2);
+            }
             this.fontContainer.push(new ValidationError(ERROR_FONTS_DICTIONARY_INVALID,
-                    "Some required fields are missing from the Font dictionary."));
+                    this.font.getName()
+                    + ": some required fields are missing from the Font dictionary: " + missingFields + "."));
         }
     }
 

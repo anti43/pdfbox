@@ -38,19 +38,17 @@ class Type1ShadingPaint implements Paint
 
     private PDShadingType1 shading;
     private Matrix ctm;
-    private int pageHeight;
 
     /**
      * Constructor.
+     *
      * @param shading the shading resources
      * @param ctm current transformation matrix
-     * @param pageHeight the height of the page
      */
-    Type1ShadingPaint(PDShadingType1 shading, Matrix ctm, int pageHeight)
+    Type1ShadingPaint(PDShadingType1 shading, Matrix ctm)
     {
         this.shading = shading;
         this.ctm = ctm;
-        this.pageHeight = pageHeight;
     }
 
     @Override
@@ -61,11 +59,11 @@ class Type1ShadingPaint implements Paint
 
     @Override
     public PaintContext createContext(ColorModel cm, Rectangle deviceBounds, Rectangle2D userBounds,
-                                      AffineTransform xform, RenderingHints hints)
+            AffineTransform xform, RenderingHints hints)
     {
         try
         {
-            return new Type1ShadingContext(shading, cm, xform, ctm, pageHeight);
+            return new Type1ShadingContext(shading, cm, xform, ctm, deviceBounds);
         }
         catch (IOException ex)
         {

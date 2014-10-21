@@ -20,17 +20,18 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Iterator;
-import java.util.Map;
 
+import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.io.IOUtils;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.common.PDStream;
 import org.apache.pdfbox.pdmodel.encryption.StandardDecryptionMaterial;
-import org.apache.pdfbox.pdmodel.font.PDCIDFontType2Font;
+import org.apache.pdfbox.pdmodel.font.PDCIDFont;
+import org.apache.pdfbox.pdmodel.font.PDCIDFontType2;
 import org.apache.pdfbox.pdmodel.font.PDFont;
-import org.apache.pdfbox.pdmodel.font.PDFontDescriptorDictionary;
+import org.apache.pdfbox.pdmodel.font.PDFontDescriptor;
 import org.apache.pdfbox.pdmodel.font.PDTrueTypeFont;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.apache.pdfbox.pdmodel.graphics.PDXObject;
@@ -157,16 +158,28 @@ public class ExtractTTFFonts
         {
             return;
         }
-        Map<String, PDFont> fonts = resources.getFonts();
-        if (fonts != null)
+
+        for (COSName key : resources.getFontNames())
         {
-            Iterator<String> fontIter = fonts.keySet().iterator();
-            while (fontIter.hasNext())
+            PDFont font = resources.getFont(key);
+            // write the font
+            if (font instanceof PDTrueTypeFont)
             {
-                String key = fontIter.next();
-                PDFont font = fonts.get(key);
-                // write the font
-                if (font instanceof PDTrueTypeFont)
+                String name = null;
+                if (addKey)
+                {
+                    name = getUniqueFileName(prefix + "_" + key, "ttf");
+                }
+                else
+                {
+                    name = getUniqueFileName(prefix, "ttf");
+                }
+                writeFont(font.getFontDescriptor(), name);
+            }
+            else if (font instanceof PDType0Font)
+            {
+                PDCIDFont descendantFont = ((PDType0Font) font).getDescendantFont();
+                if (descendantFont instanceof PDCIDFontType2)
                 {
                     String name = null;
                     if (addKey)
@@ -177,49 +190,26 @@ public class ExtractTTFFonts
                     {
                         name = getUniqueFileName(prefix, "ttf");
                     }
-                    writeFont(font, name);
-                }
-                else if (font instanceof PDType0Font)
-                {
-                    PDFont descendantFont = ((PDType0Font) font).getDescendantFont();
-                    if (descendantFont instanceof PDCIDFontType2Font)
-                    {
-                        String name = null;
-                        if (addKey)
-                        {
-                            name = getUniqueFileName(prefix + "_" + key, "ttf");
-                        }
-                        else
-                        {
-                            name = getUniqueFileName(prefix, "ttf");
-                        }
-                        writeFont(descendantFont, name);
-                    }
+                    writeFont(descendantFont.getFontDescriptor(), name);
                 }
             }
         }
-        Map<String, PDXObject> xobjects = resources.getXObjects();
-        if (xobjects != null)
+
+        for (COSName name : resources.getXObjectNames())
         {
-            Iterator<String> xobjectIter = xobjects.keySet().iterator();
-            while (xobjectIter.hasNext())
+            PDXObject xobject = resources.getXObject(name);
+            if (xobject instanceof PDFormXObject)
             {
-                String key = xobjectIter.next();
-                PDXObject xobject = xobjects.get(key);
-                if (xobject instanceof PDFormXObject)
-                {
-                    PDFormXObject xObjectForm = (PDFormXObject) xobject;
-                    PDResources formResources = xObjectForm.getResources();
-                    processResources(formResources, prefix, addKey);
-                }
+                PDFormXObject xObjectForm = (PDFormXObject) xobject;
+                PDResources formResources = xObjectForm.getResources();
+                processResources(formResources, prefix, addKey);
             }
         }
 
     }
 
-    private void writeFont(PDFont font, String name) throws IOException
+    private void writeFont(PDFontDescriptor fd, String name) throws IOException
     {
-        PDFontDescriptorDictionary fd = (PDFontDescriptorDictionary) font.getFontDescriptor();
         if (fd != null)
         {
             PDStream ff2Stream = fd.getFontFile2();

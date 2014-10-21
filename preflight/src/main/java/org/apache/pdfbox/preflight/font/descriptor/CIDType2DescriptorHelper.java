@@ -26,17 +26,13 @@ import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_FONTS_CID_DAM
 import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_FONTS_FONT_FILEX_INVALID;
 import static org.apache.pdfbox.preflight.PreflightConstants.FONT_DICTIONARY_KEY_CIDSET;
 
-import java.io.ByteArrayInputStream;
-
-import org.apache.fontbox.ttf.TTFParser;
-import org.apache.fontbox.ttf.TrueTypeFont;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSDocument;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSStream;
 import org.apache.pdfbox.pdmodel.common.PDStream;
-import org.apache.pdfbox.pdmodel.font.PDFont;
-import org.apache.pdfbox.pdmodel.font.PDFontDescriptorDictionary;
+import org.apache.pdfbox.pdmodel.font.PDFontDescriptor;
+import org.apache.pdfbox.pdmodel.font.PDFontLike;
 import org.apache.pdfbox.preflight.PreflightContext;
 import org.apache.pdfbox.preflight.ValidationResult;
 import org.apache.pdfbox.preflight.ValidationResult.ValidationError;
@@ -47,7 +43,7 @@ import org.apache.pdfbox.preflight.utils.COSUtils;
 public class CIDType2DescriptorHelper extends FontDescriptorHelper<CIDType2Container>
 {
 
-    public CIDType2DescriptorHelper(PreflightContext context, PDFont font, CIDType2Container fontContainer)
+    public CIDType2DescriptorHelper(PreflightContext context, PDFontLike font, CIDType2Container fontContainer)
     {
         super(context, font, fontContainer);
     }
@@ -58,12 +54,12 @@ public class CIDType2DescriptorHelper extends FontDescriptorHelper<CIDType2Conta
      * 
      * @param pfDescriptor
      */
-    protected void checkCIDSet(PDFontDescriptorDictionary pfDescriptor)
+    protected void checkCIDSet(PDFontDescriptor pfDescriptor)
     {
         if (FontValidator.isSubSet(pfDescriptor.getFontName()))
         {
             COSDocument cosDocument = context.getDocument().getDocument();
-            COSBase cidset = pfDescriptor.getCOSDictionary().getItem(COSName.getPDFName(FONT_DICTIONARY_KEY_CIDSET));
+            COSBase cidset = pfDescriptor.getCOSObject().getItem(COSName.getPDFName(FONT_DICTIONARY_KEY_CIDSET));
             if (cidset == null || !COSUtils.isStream(cidset, cosDocument))
             {
                 this.fContainer.push(new ValidationResult.ValidationError(ERROR_FONTS_CIDSET_MISSING_FOR_SUBSET,
@@ -73,14 +69,12 @@ public class CIDType2DescriptorHelper extends FontDescriptorHelper<CIDType2Conta
     }
 
     @Override
-    public PDStream extractFontFile(PDFontDescriptorDictionary fontDescriptor)
+    public PDStream extractFontFile(PDFontDescriptor fontDescriptor)
     {
         PDStream ff2 = fontDescriptor.getFontFile2();
         if (ff2 != null)
         {
-            /*
-             * Stream validation should be done by the StreamValidateHelper. Process font specific check
-             */
+            // Stream validation should be done by the StreamValidateHelper. Process font specific check
             COSStream stream = ff2.getStream();
             if (stream == null)
             {
@@ -94,28 +88,11 @@ public class CIDType2DescriptorHelper extends FontDescriptorHelper<CIDType2Conta
     }
 
     @Override
-    protected void processFontFile(PDFontDescriptorDictionary fontDescriptor, PDStream fontFile)
+    protected void processFontFile(PDFontDescriptor fontDescriptor, PDStream fontFile)
     {
-        /*
-         * try to load the font using the java.awt.font object. if the font is invalid, an exception will be thrown
-         */
-        TrueTypeFont ttf = null;
-        try
+        if (font.isDamaged())
         {
-            /*
-             * According to PDF Reference, CIDFontType2 is a TrueType font. Remark : Java.awt.Font throws exception when
-             * a CIDFontType2 is parsed even if it is valid.
-             */
-            ttf = new TTFParser(true).parseTTF(new ByteArrayInputStream(fontFile.getByteArray()));
-            this.fContainer.setTtf(ttf);
-        }
-        catch (Exception e)
-        {
-            /*
-             * Exceptionally, Exception is catched Here because of damaged font can throw NullPointer Exception...
-             */
             this.fContainer.push(new ValidationError(ERROR_FONTS_CID_DAMAGED, "The FontFile can't be read"));
         }
     }
-
 }

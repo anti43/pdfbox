@@ -39,7 +39,6 @@ import org.apache.pdfbox.cos.COSStream;
 import org.apache.pdfbox.cos.COSString;
 import org.apache.pdfbox.io.IOUtils;
 import org.apache.pdfbox.io.PushBackInputStream;
-import org.apache.pdfbox.io.RandomAccess;
 import org.apache.pdfbox.persistence.util.COSObjectKey;
 
 /**
@@ -127,7 +126,7 @@ public abstract class BaseParser
     /**
      * Default value of the {@link #forceParsing} flag.
      */
-    protected static final boolean FORCE_PARSING =
+    public static final boolean FORCE_PARSING =
         Boolean.getBoolean("org.apache.pdfbox.forceParsing");
 
     /**
@@ -203,6 +202,24 @@ public abstract class BaseParser
         this(new ByteArrayInputStream(input));
     }
 
+    /**
+     * Returns a new instance of a COSStream.
+     * 
+     * @param dictionary the dictionary belonging to the stream
+     * @return the new COSStream
+     */
+    protected final COSStream createCOSStream(COSDictionary dictionary)
+    {
+        if (document != null)
+        {
+            return document.createCOSStream(dictionary);
+        }
+        else
+        {
+            return null;
+        }
+    }
+    
     /**
      * Set the document for this stream.
      *
@@ -306,41 +323,13 @@ public abstract class BaseParser
                                 if(read==D)
                                 {
                                     read = pdfSource.read();
-                                    if(read==S) 
+                                    boolean isStream = read == S && pdfSource.read() == T && pdfSource.read() == R
+                                            && pdfSource.read() == E && pdfSource.read() == A && pdfSource.read() == M;
+
+                                    boolean isObj = !isStream && read == O && pdfSource.read() == B && pdfSource.read() == J;
+                                    if (isStream || isObj)
                                     {
-                                        read = pdfSource.read();
-                                        if(read==T) 
-                                        {
-                                            read = pdfSource.read();
-                                            if(read==R) 
-                                            {
-                                                read = pdfSource.read();
-                                                if(read==E) 
-                                                {
-                                                    read = pdfSource.read();
-                                                    if(read==A) 
-                                                    {
-                                                        read = pdfSource.read();
-                                                        if(read==M) 
-                                                        {
-                                                            return obj; // we're done reading this object!
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    } 
-                                    else if(read==O) 
-                                    {
-                                        read = pdfSource.read();
-                                        if(read==B) 
-                                        {
-                                            read = pdfSource.read();
-                                            if(read==J) 
-                                            {
-                                                return obj; // we're done reading this object!
-                                            }
-                                        }
+                                        return obj; // we're done reading this object!
                                     }
                                 }
                             }
@@ -403,16 +392,15 @@ public abstract class BaseParser
     /**
      * This will read a COSStream from the input stream.
      *
-     * @param file The file to write the stream to when reading.
      * @param dic The dictionary that goes with this stream.
      *
      * @return The parsed pdf stream.
      *
      * @throws IOException If there is an error reading the stream.
      */
-    protected COSStream parseCOSStream( COSDictionary dic, RandomAccess file ) throws IOException
+    protected COSStream parseCOSStream( COSDictionary dic ) throws IOException
     {
-        COSStream stream = new COSStream( dic, file );
+        COSStream stream = createCOSStream( dic );
         OutputStream out = null;
         try
         {
@@ -566,7 +554,7 @@ public abstract class BaseParser
                         }
                         // close and create new filtered stream
                         IOUtils.closeQuietly(out);
-                        out = stream.createFilteredStream( streamLength );
+                        out = stream.createFilteredStream();
                         // scan until we find endstream:
                         readUntilEndStream( new EndstreamOutputStream(out) );
                     }
@@ -639,7 +627,7 @@ public abstract class BaseParser
      * 
      * @throws IOException
      */
-    private void readUntilEndStream( final OutputStream out ) throws IOException
+    protected void readUntilEndStream( final OutputStream out ) throws IOException
     {
 
         int bufSize;
@@ -995,7 +983,7 @@ public abstract class BaseParser
      *
      * @throws IOException If there is an error reading from the stream.
      */
-    private final COSString parseCOSHexString() throws IOException
+    private COSString parseCOSHexString() throws IOException
     {
         final StringBuilder sBuf = new StringBuilder();
         while( true )

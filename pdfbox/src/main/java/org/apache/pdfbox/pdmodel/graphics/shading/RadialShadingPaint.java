@@ -31,6 +31,7 @@ import org.apache.pdfbox.util.Matrix;
 
 /**
  * AWT Paint for radial shading.
+ *
  * @author Andreas Lehmkühler
  */
 public class RadialShadingPaint implements Paint
@@ -39,34 +40,32 @@ public class RadialShadingPaint implements Paint
 
     private PDShadingType3 shading;
     private Matrix ctm;
-    private int pageHeight;
-    
+
     /**
      * Constructor.
+     *
      * @param shading the shading resources
      * @param ctm current transformation matrix
-     * @param pageHeight size of the current page
      */
-    RadialShadingPaint(PDShadingType3 shading, Matrix ctm, int pageHeight)
+    RadialShadingPaint(PDShadingType3 shading, Matrix ctm)
     {
         this.shading = shading;
         this.ctm = ctm;
-        this.pageHeight = pageHeight;
     }
 
     @Override
-    public int getTransparency() 
+    public int getTransparency()
     {
         return 0;
     }
 
     @Override
     public PaintContext createContext(ColorModel cm, Rectangle deviceBounds, Rectangle2D userBounds,
-                                      AffineTransform xform, RenderingHints hints)
+            AffineTransform xform, RenderingHints hints)
     {
         try
         {
-            return new RadialShadingContext(shading, cm, xform, ctm, pageHeight);
+            return new RadialShadingContext(shading, cm, xform, ctm, deviceBounds);
         }
         catch (IOException ex)
         {

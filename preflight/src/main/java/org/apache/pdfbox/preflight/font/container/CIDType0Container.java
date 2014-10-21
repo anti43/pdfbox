@@ -22,90 +22,18 @@
 package org.apache.pdfbox.preflight.font.container;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
+import org.apache.pdfbox.pdmodel.font.PDCIDFontType0;
 
-import org.apache.fontbox.cff.CFFFont;
-import org.apache.fontbox.cff.CFFFont.Mapping;
-import org.apache.pdfbox.pdmodel.font.PDFont;
-
-public class CIDType0Container extends FontContainer
+public class CIDType0Container extends FontContainer<PDCIDFontType0>
 {
-    protected List<CFFFont> lCFonts = new ArrayList<CFFFont>();
-
-    public CIDType0Container(PDFont font)
+    public CIDType0Container(PDCIDFontType0 font)
     {
         super(font);
     }
 
     @Override
-    protected float getFontProgramWidth(int cid)
+    public boolean hasGlyph(int code) throws IOException
     {
-        // build the font container and keep it in the Handler.
-        boolean cidFound = false;
-        for (CFFFont font : this.lCFonts)
-        {
-            Collection<Mapping> cMapping = font.getMappings();
-            for (Mapping mapping : cMapping)
-            {
-                /*
-                 * REMARK : May be this code must be changed like the Type1FontContainer to Map the SID with the
-                 * character name? Not enough PDF with this kind of Font to test the current implementation
-                 */
-                if (mapping.getSID() == cid)
-                {
-                    cidFound = true;
-                    break;
-                }
-            }
-            if (cidFound)
-            {
-                break;
-            }
-        }
-
-        float widthInFontProgram = 0;
-        if (cidFound || cid == 0)
-        {
-
-            float defaultGlyphWidth = 0;
-            if (this.font.getFontDescriptor() != null)
-            {
-                defaultGlyphWidth = this.font.getFontDescriptor().getMissingWidth();
-            }
-
-            try
-            {
-                // Search the CID in all CFFFont in the FontProgram
-                for (CFFFont cff : this.lCFonts)
-                {
-                    widthInFontProgram = cff.getWidth(cid);
-                    if (widthInFontProgram != defaultGlyphWidth)
-                    {
-                        break;
-                    }
-                }
-            }
-            catch (IOException e)
-            {
-                widthInFontProgram = -1;
-            }
-        }
-        else
-        {
-            /*
-             * Cid 0 is commonly used as the NotDef Glyph. this glyph can be used as Space. IN PDF/A-1 the Notdef glyph
-             * can be used as space. Not in PDF/A-2
-             */
-            widthInFontProgram = -1;
-        }
-        return widthInFontProgram;
+        return font.codeToGID(code) != 0;
     }
-
-    public void setlCFonts(List<CFFFont> lCFonts)
-    {
-        this.lCFonts = lCFonts;
-    }
-
 }

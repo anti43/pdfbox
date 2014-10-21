@@ -18,14 +18,12 @@ package org.apache.pdfbox.pdmodel.font;
 
 import java.io.IOException;
 import java.io.InputStream;
-import org.apache.fontbox.ttf.CMAPEncodingEntry;
-import org.apache.fontbox.ttf.CMAPTable;
+import org.apache.fontbox.ttf.CmapSubtable;
+import org.apache.fontbox.ttf.CmapTable;
 import org.apache.fontbox.ttf.NameRecord;
 import org.apache.fontbox.ttf.PostScriptTable;
 import org.apache.fontbox.ttf.TTFParser;
 import org.apache.fontbox.ttf.TrueTypeFont;
-import org.apache.pdfbox.encoding.Encoding;
-import org.apache.pdfbox.encoding.WinAnsiEncoding;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -49,27 +47,27 @@ public class TestTTFParser
 
         TTFParser parser = new TTFParser();
 
-        TrueTypeFont arial = parser.parseTTF(arialIs);
+        TrueTypeFont arial = parser.parse(arialIs);
 
-        CMAPTable cmap = arial.getCMAP();
-        Assert.assertNotNull(cmap);
+        CmapTable cmapTable = arial.getCmap();
+        Assert.assertNotNull(cmapTable);
 
-        CMAPEncodingEntry[] cmaps = cmap.getCmaps();
+        CmapSubtable[] cmaps = cmapTable.getCmaps();
         Assert.assertNotNull(cmaps);
 
-        CMAPEncodingEntry uc = null;
+        CmapSubtable cmap = null;
 
-        for (CMAPEncodingEntry e : cmaps)
+        for (CmapSubtable e : cmaps)
         {
             if (e.getPlatformId() == NameRecord.PLATFORM_WINDOWS
-                    && e.getPlatformEncodingId() == NameRecord.PLATFORM_ENCODING_WINDOWS_UNICODE)
+                    && e.getPlatformEncodingId() == NameRecord.ENCODING_WINDOWS_UNICODE_BMP)
             {
-                uc = e;
+                cmap = e;
                 break;
             }
         }
 
-        Assert.assertNotNull(uc);
+        Assert.assertNotNull(cmap);
 
         PostScriptTable post = arial.getPostScript();
         Assert.assertNotNull(post);
@@ -77,53 +75,12 @@ public class TestTTFParser
         String[] glyphNames = arial.getPostScript().getGlyphNames();
         Assert.assertNotNull(glyphNames);
 
-        Encoding enc = new WinAnsiEncoding();
+        // test a WGL4 (Macintosh standard) name
+        int gid = cmap.getGlyphId(0x2122); // TRADE MARK SIGN
+        Assert.assertEquals("trademark", glyphNames[gid]);
 
-        int[] charCodes = uc.getGlyphIdToCharacterCode();
-        Assert.assertNotNull(charCodes);
-
-        for (int gid = 0; gid < charCodes.length; ++gid)
-        {
-            int charCode = charCodes[gid];
-            String name = glyphNames[gid];
-            if (charCode < 0x8000 && charCode >= 32)
-            {
-                if ("space".equals(name) || "slash".equals(name) || "bracketleft".equals(name)
-                        || "bracketright".equals(name) || "braceleft".equals(name) || "braceright".equals(name)
-                        || "product".equals(name) || "integral".equals(name) || "Omega".equals(name)
-                        || "radical".equals(name) || "tilde".equals(name))
-                {
-                    Assert.assertTrue(enc.getNameForCharacter((char) charCode).startsWith(name));
-                }
-                else if ("bar".equals(name))
-                {
-                    Assert.assertTrue(enc.getNameForCharacter((char) charCode).endsWith(name));
-                }
-                else if ("sfthyphen".equals(name))
-                {
-                    Assert.assertEquals("softhyphen", enc.getNameForCharacter((char) charCode));
-                }
-                else if ("periodcentered".equals(name) && !enc.getNameForCharacter((char) charCode).equals(name))
-                {
-                    Assert.assertEquals("bulletoperator", enc.getNameForCharacter((char) charCode));
-                }
-                else if ("fraction".equals(name))
-                {
-                    Assert.assertEquals("divisionslash", enc.getNameForCharacter((char) charCode));
-                }
-                else if ("mu".equals(name))
-                {
-                    Assert.assertEquals("mu1", enc.getNameForCharacter((char) charCode));
-                }
-                else if ("pi".equals(name))
-                {
-                    Assert.assertEquals(0x03c0, charCode);
-                }
-                else
-                {
-                    Assert.assertEquals(enc.getNameForCharacter((char) charCode), name);
-                }
-            }
-        }
+        // test an additional name
+        gid = cmap.getGlyphId(0x20AC); // EURO SIGN
+        Assert.assertEquals("Euro", glyphNames[gid]);
     }
 }

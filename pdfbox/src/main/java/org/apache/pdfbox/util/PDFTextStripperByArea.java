@@ -24,7 +24,6 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import java.util.Vector;
 
 import org.apache.pdfbox.cos.COSStream;
@@ -55,39 +54,6 @@ public class PDFTextStripperByArea extends PDFTextStripper
         super();
     }
 
-        
-    /**
-     * Instantiate a new PDFTextStripperArea object. Loading all of the operator
-     * mappings from the properties object that is passed in. Does not convert
-     * the text to more encoding-specific output.
-     * 
-     * @param props
-     *            The properties containing the mapping of operators to
-     *            PDFOperator classes.
-     * 
-     * @throws IOException
-     *             If there is an error reading the properties.
-     */
-    public PDFTextStripperByArea(Properties props) throws IOException
-    {
-        super(props);
-    }
-
-    /**
-     * Instantiate a new PDFTextStripperArea object. This object will load
-     * properties from PDFTextStripper.properties and will apply
-     * encoding-specific conversions to the output text.
-     * 
-     * @param encoding
-     *            The encoding that the output will be written in.
-     * @throws IOException
-     *             If there is an error reading the properties.
-     */
-    public PDFTextStripperByArea(String encoding) throws IOException
-    {
-        super(encoding);
-    }
-    
    /**
      * Add a new region to group text by.
      *

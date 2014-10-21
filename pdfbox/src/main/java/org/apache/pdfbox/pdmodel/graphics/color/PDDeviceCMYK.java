@@ -16,9 +16,8 @@
  */
 package org.apache.pdfbox.pdmodel.graphics.color;
 
+import java.net.URL;
 import org.apache.pdfbox.cos.COSName;
-import org.apache.pdfbox.io.IOUtils;
-import org.apache.pdfbox.util.ResourceLoader;
 
 import java.awt.color.ICC_ColorSpace;
 import java.awt.color.ICC_Profile;
@@ -27,7 +26,6 @@ import java.awt.image.WritableRaster;
 import java.io.IOException;
 
 import java.io.InputStream;
-import java.util.Properties;
 
 /**
  * Allows colors to be specified according to the subtractive CMYK (cyan, magenta, yellow, black)
@@ -36,10 +34,10 @@ import java.util.Properties;
  * @author John Hewson
  * @author Ben Litchfield
  */
-public final class PDDeviceCMYK extends PDDeviceColorSpace
+public class PDDeviceCMYK extends PDDeviceColorSpace
 {
     /**  The single instance of this class. */
-    public static final PDDeviceCMYK INSTANCE;
+    public static PDDeviceCMYK INSTANCE;
     static
     {
         try
@@ -52,37 +50,45 @@ public final class PDDeviceCMYK extends PDDeviceColorSpace
         }
     }
 
+    private final PDColor initialColor = new PDColor(new float[] { 0, 0, 0, 1 }, this);
     private final ICC_ColorSpace awtColorSpace;
-    private static final PDColor INITIAL_COLOR = new PDColor(new float[] { 0, 0, 0, 1 });
 
-    private PDDeviceCMYK() throws IOException
+    protected PDDeviceCMYK() throws IOException
     {
-        awtColorSpace = getAWTColorSpace();
+        // loads the ICC color profile for CMYK
+        ICC_Profile iccProfile = getICCProfile();
+        if (iccProfile == null)
+        {
+            throw new IOException("Default CMYK color profile could not be loaded");
+        }
+        awtColorSpace = new ICC_ColorSpace(iccProfile);
+
+        // there is a JVM bug which results in a CMMException which appears to be a race
+        // condition caused by lazy initialization of the color transform, so we perform
+        // an initial color conversion while we're still in a static context, see PDFBOX-2184
+        awtColorSpace.toRGB(new float[] { 0, 0, 0, 0 });
     }
 
-    // loads the ICC color profile for CMYK
-    private static ICC_ColorSpace getAWTColorSpace() throws IOException
+    protected ICC_Profile getICCProfile() throws IOException
     {
-        ICC_ColorSpace colorSpace;
-        InputStream profile = null;
-        try
-        {
-            Properties properties = ResourceLoader.loadProperties(
-                    "org/apache/pdfbox/resources/PDDeviceCMYK.properties", new Properties());
+        // Adobe Acrobat uses "U.S. Web Coated (SWOP) v2" as the default
+        // CMYK profile, however it is not available under an open license.
+        // Instead, the "ISO Coated v2 300% (basICColor)" is used, which
+        // is an open alternative to the "ISO Coated v2 300% (ECI)" profile.
 
-            profile = ResourceLoader.loadResource(properties.getProperty("DeviceCMYK"));
-            if (profile == null)
-            {
-                throw new IOException("Default CMYK color profile could not be loaded");
-            }
-            ICC_Profile iccProfile = ICC_Profile.getInstance(profile);
-            colorSpace = new ICC_ColorSpace(iccProfile);
-        }
-        finally
+        String name = "org/apache/pdfbox/resources/icc/ISOcoated_v2_300_bas.icc";
+
+        URL url = PDDeviceCMYK.class.getClassLoader().getResource(name);
+        if (url == null)
         {
-            IOUtils.closeQuietly(profile);
+            throw new IOException("Error loading resource: " + name);
         }
-        return colorSpace;
+
+        InputStream input = url.openStream();
+        ICC_Profile iccProfile = ICC_Profile.getInstance(input);
+        input.close();
+
+        return iccProfile;
     }
 
     @Override
@@ -106,7 +112,7 @@ public final class PDDeviceCMYK extends PDDeviceColorSpace
     @Override
     public PDColor getInitialColor()
     {
-        return INITIAL_COLOR;
+        return initialColor;
     }
 
     @Override

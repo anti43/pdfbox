@@ -182,11 +182,46 @@ public class ValidationResult
         private String details;
 
         /**
-         * false : this error can't be ignore true : this error can be ignore
+         * false: this error can't be ignored; true: this error can be ignored
          */
         private boolean isWarning = false;
 
         // TODO Add here COSObject or the PDObject that is linked to the error may a automatic fix can be done.
+
+        /**
+         * Always record the place in the source code where the ValidationError
+         * was created, in case the ValidationError was not caused by a
+         * Throwable.
+         */
+        private Throwable t = null;
+
+        /**
+         * Get the place where the ValidationError was created, useful if the
+         * ValidationError was not caused by a Throwable.
+         *
+         * @return The place where the ValidationError was created.
+         */
+        public Throwable getThrowable()
+        {
+            return t;
+        }
+
+        /**
+         * The underlying cause if the ValidationError was caused by a Throwable.
+         */
+        private Throwable cause = null;
+
+        /**
+         * Get the underlying cause if the ValidationError was caused by a
+         * Throwable.
+         *
+         * @return The underlying cause if the ValidationError was caused by a
+         * Throwable, or null if not.
+         */
+        public Throwable getCause()
+        {
+            return cause;
+        }
 
         /**
          * Create a validation error with the given error code
@@ -202,7 +237,7 @@ public class ValidationResult
             }
             else if (errorCode.startsWith(PreflightConstants.ERROR_SYNTAX_HEADER))
             {
-                this.details = "Body Syntax error";
+                this.details = "Header Syntax error";
             }
             else if (errorCode.startsWith(PreflightConstants.ERROR_SYNTAX_BODY))
             {
@@ -277,17 +312,18 @@ public class ValidationResult
                 // default Unkown error
                 this.details = "Unknown error";
             }
+            t = new Exception();
         }
 
         /**
-         * Create a validation error with the given error code and the error explanation.
-         * 
-         * @param errorCode
-         *            the error code
-         * @param details
-         *            the error explanation
+         * Create a validation error with the given error code and the error
+         * explanation.
+         *
+         * @param errorCode the error code
+         * @param details the error explanation
+         * @param cause the error cause
          */
-        public ValidationError(String errorCode, String details)
+        public ValidationError(String errorCode, String details, Throwable cause)
         {
             this(errorCode);
             if (details != null)
@@ -296,7 +332,21 @@ public class ValidationResult
                 sb.append(this.details).append(", ").append(details);
                 this.details = sb.toString();
             }
+            this.cause = cause;
+            t = new Exception();
         }
+
+        /**
+         * Create a validation error with the given error code and the error
+         * explanation.
+         *
+         * @param errorCode the error code
+         * @param details the error explanation
+         */
+        public ValidationError(String errorCode, String details)
+        {
+            this(errorCode, details, null);
+        }        
 
         /**
          * @return the error code
@@ -339,6 +389,7 @@ public class ValidationResult
             return errorCode.hashCode();
         }
 
+        @Override
         public boolean equals (Object o) {
             if (o instanceof ValidationError) {
                 ValidationError ve = (ValidationError)o;

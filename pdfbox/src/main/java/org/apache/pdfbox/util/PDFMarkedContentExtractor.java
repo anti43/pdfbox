@@ -21,91 +21,51 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import java.util.Stack;
 
+import org.apache.pdfbox.contentstream.PDFTextStreamEngine;
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.documentinterchange.markedcontent.PDMarkedContent;
 import org.apache.pdfbox.pdmodel.graphics.PDXObject;
-import org.apache.pdfbox.text.TextNormalize;
 import org.apache.pdfbox.text.TextPosition;
+import org.apache.pdfbox.contentstream.operator.markedcontent.BeginMarkedContentSequence;
+import org.apache.pdfbox.contentstream.operator.markedcontent.BeginMarkedContentSequenceWithProperties;
+import org.apache.pdfbox.contentstream.operator.markedcontent.EndMarkedContentSequence;
 
 /**
  * This is an stream engine to extract the marked content of a pdf.
- * @author koch
- * @version $Revision$
+ *
+ * @author Johannes Koch
  */
 public class PDFMarkedContentExtractor extends PDFTextStreamEngine
 {
     private boolean suppressDuplicateOverlappingText = true;
     private List<PDMarkedContent> markedContents = new ArrayList<PDMarkedContent>();
     private Stack<PDMarkedContent> currentMarkedContents = new Stack<PDMarkedContent>();
-
-    private Map<String, List<TextPosition>> characterListMapping =
-        new HashMap<String, List<TextPosition>>();
+    private Map<String, List<TextPosition>> characterListMapping = new HashMap<String, List<TextPosition>>();
 
     /**
-     * encoding that text will be written in (or null).
-     */
-    protected String outputEncoding; 
-
-    /**
-     * The normalizer is used to remove text ligatures/presentation forms
-     * and to correct the direction of right to left text, such as Arabic and Hebrew.
-     */
-    private TextNormalize normalize = null;
-
-    /**
-     * Instantiate a new PDFTextStripper object. This object will load
-     * properties from PDFMarkedContentExtractor.properties and will not
-     * do anything special to convert the text to a more encoding-specific
-     * output.
-     *
-     * @throws IOException If there is an error loading the properties.
+     * Instantiate a new PDFTextStripper object.
      */
     public PDFMarkedContentExtractor() throws IOException
     {
-        super( ResourceLoader.loadProperties(
-                "org/apache/pdfbox/resources/PDFMarkedContentExtractor.properties", true ) );
-        this.outputEncoding = null;
-        this.normalize = new TextNormalize(this.outputEncoding);
-    }
-
-
-    /**
-     * Instantiate a new PDFTextStripper object.  Loading all of the operator mappings
-     * from the properties object that is passed in.  Does not convert the text
-     * to more encoding-specific output.
-     *
-     * @param props The properties containing the mapping of operators to PDFOperator
-     * classes.
-     *
-     * @throws IOException If there is an error reading the properties.
-     */
-    public PDFMarkedContentExtractor( Properties props ) throws IOException
-    {
-        super( props );
-        this.outputEncoding = null;
-        this.normalize = new TextNormalize(this.outputEncoding);
+        this(null);
     }
 
     /**
-     * Instantiate a new PDFTextStripper object. This object will load
-     * properties from PDFMarkedContentExtractor.properties and will apply
-     * encoding-specific conversions to the output text.
+     * Constructor. Will apply encoding-specific conversions to the output text.
      *
      * @param encoding The encoding that the output will be written in.
-     * @throws IOException If there is an error reading the properties.
      */
-    public PDFMarkedContentExtractor( String encoding ) throws IOException
+    public PDFMarkedContentExtractor(String encoding) throws IOException
     {
-        super( ResourceLoader.loadProperties(
-                "org/apache/pdfbox/resources/PDFMarkedContentExtractor.properties", true ));
-        this.outputEncoding = encoding;
-        this.normalize = new TextNormalize(this.outputEncoding);
+        addOperator(new BeginMarkedContentSequenceWithProperties());
+        addOperator(new BeginMarkedContentSequence());
+        addOperator(new EndMarkedContentSequence());
+        // todo: DP - Marked Content Point
+        // todo: MP - Marked Content Point with Properties
     }
-
 
     /**
      * This will determine of two floating point numbers are within a specified variance.
@@ -118,7 +78,6 @@ public class PDFMarkedContentExtractor extends PDFTextStreamEngine
     {
         return second > first - variance && second < first + variance;
     }
-
 
     public void beginMarkedContentSequence(COSName tag, COSDictionary properties)
     {
@@ -154,7 +113,6 @@ public class PDFMarkedContentExtractor extends PDFTextStreamEngine
             this.currentMarkedContents.peek().addXObject(xobject);
         }
     }
-
 
     /**
      * This will process a TextPosition object and add the
@@ -241,13 +199,13 @@ public class PDFMarkedContentExtractor extends PDFTextStreamEngine
                 TextPosition previousTextPosition = (TextPosition)textList.get(textList.size()-1);
                 if(text.isDiacritic() && previousTextPosition.contains(text))
                 {
-                    previousTextPosition.mergeDiacritic(text, this.normalize);
+                    previousTextPosition.mergeDiacritic(text);
                 }
                 /* If the previous TextPosition was the diacritic, merge it into this
                  * one and remove it from the list. */
                 else if(previousTextPosition.isDiacritic() && text.contains(previousTextPosition))
                 {
-                    text.mergeDiacritic(previousTextPosition, this.normalize);
+                    text.mergeDiacritic(previousTextPosition);
                     textList.remove(textList.size()-1);
                     textList.add(text);
                 }
@@ -263,10 +221,8 @@ public class PDFMarkedContentExtractor extends PDFTextStreamEngine
         }
     }
 
-
     public List<PDMarkedContent> getMarkedContents()
     {
         return this.markedContents;
     }
-
 }

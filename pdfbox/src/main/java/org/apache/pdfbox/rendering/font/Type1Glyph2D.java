@@ -18,121 +18,70 @@ package org.apache.pdfbox.rendering.font;
 
 import java.awt.geom.GeneralPath;
 import java.io.IOException;
-import java.util.Collection;
 import java.util.HashMap;
-import java.util.Map;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.fontbox.cff.CFFFont;
-import org.apache.fontbox.type1.Type1Font;
-import org.apache.fontbox.type1.Type1Mapping;
-import org.apache.pdfbox.encoding.Encoding;
+import org.apache.pdfbox.pdmodel.font.PDType1Equivalent;
 
 /**
- * This class provides a glyph to GeneralPath conversion for Type 1 PFB and CFF fonts.
+ * Glyph to GeneralPath conversion for Type 1 PFB and CFF, and TrueType fonts with a 'post' table.
  */
 public class Type1Glyph2D implements Glyph2D
 {
     private static final Log LOG = LogFactory.getLog(Type1Glyph2D.class);
 
-    private HashMap<String, GeneralPath> glyphs = new HashMap<String, GeneralPath>();
-    private Map<Integer, String> codeToName = new HashMap<Integer, String>();
-    private String fontName = null;
+    private final HashMap<Integer, GeneralPath> cache = new HashMap<Integer, GeneralPath>();
+    private final PDType1Equivalent font;
 
     /**
-     * Constructs a new Type1Glyph2D object for a CFF/Type2 font.
+     * Constructor.
      *
-     * @param font CFF/Type2 font
-     * @param encoding PDF Encoding or null
+     * @param font PDF Type1 font.
      */
-    public Type1Glyph2D(CFFFont font, Encoding encoding)
+    public Type1Glyph2D(PDType1Equivalent font)
     {
-        this(font.getName(), font.getType1Mappings(), encoding);
-    }
-
-    /**
-     * Constructs a new Type1Glyph2D object for a Type 1 (PFB) font.
-     *
-     * @param font Type 1 (PFB) font
-     * @param encoding PDF Encoding or null
-     */
-    public Type1Glyph2D(Type1Font font, Encoding encoding)
-    {
-        this(font.getFontName(), font.getType1Mappings(), encoding);
-    }
-
-    /**
-     * Private constructor.
-     */
-    private Type1Glyph2D(String fontName, Collection<? extends Type1Mapping> mappings, Encoding encoding)
-    {
-        this.fontName = fontName;
-        // start with built-in encoding
-        for (Type1Mapping mapping : mappings)
-        {
-            codeToName.put(mapping.getCode(), mapping.getName());
-        }
-        // override existing entries with an optional PDF Encoding
-        if (encoding != null) 
-        {
-            Map<Integer, String> encodingCodeToName = encoding.getCodeToNameMap();
-            for (Integer key : encodingCodeToName.keySet())
-            {
-                codeToName.put(key, encodingCodeToName.get(key));
-            }
-        }
-        for (Type1Mapping mapping : mappings)
-        {
-            GeneralPath path;
-            try
-            {
-                path = mapping.getType1CharString().getPath();
-                glyphs.put(mapping.getName(), path);
-            }
-            catch (IOException exception)
-            {
-                LOG.error("Type 1 glyph rendering failed", exception);
-            }
-        }
-    }
-
-    /**
-     * Returns the path describing the glyph for the given name.
-     *
-     * @param name the name of the glyph
-     * @return the GeneralPath for the given glyph
-     */
-    public GeneralPath getPathForGlyphName(String name)
-    {
-        return glyphs.get(name);
+        this.font = font;
     }
 
     @Override
     public GeneralPath getPathForCharacterCode(int code)
     {
-        if (codeToName.containsKey(code))
+        // cache
+        if (cache.containsKey(code))
         {
-            String name = codeToName.get(code);
-            return glyphs.get(name);
+            return cache.get(code);
         }
-        else
+
+        // fetch
+        try
         {
-            LOG.debug(fontName + ": glyph mapping for " + code + " not found");
+            String name = font.codeToName(code);
+            if (name.equals(".notdef"))
+            {
+                LOG.warn("No glyph for " + code + " (" + name + ") in font " + font.getName());
+            }
+
+            // todo: can this happen? should it be encapsulated?
+            GeneralPath path = font.getPath(name);
+            if (path == null)
+            {
+                path = font.getPath(".notdef");
+            }
+
+            cache.put(code, path);
+            return path;
         }
-        return null;
+        catch (IOException e)
+        {
+            LOG.error("Glyph rendering failed", e); // todo: escalate this error?
+            return new GeneralPath();
+        }
     }
 
     @Override
     public void dispose()
     {
-        if (glyphs != null)
-        {
-            glyphs.clear();
-        }
-        if (codeToName != null)
-        {
-            codeToName.clear();
-        }
+        cache.clear();
     }
 }

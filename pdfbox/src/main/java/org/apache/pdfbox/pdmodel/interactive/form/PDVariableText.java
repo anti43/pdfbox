@@ -16,12 +16,11 @@
  */
 package org.apache.pdfbox.pdmodel.interactive.form;
 
+import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSNumber;
 import org.apache.pdfbox.cos.COSString;
-
-import java.io.IOException;
 
 /**
  * Base class for fields which use "Variable Text".
@@ -29,45 +28,24 @@ import java.io.IOException;
  *
  * @author Ben Litchfield
  */
-public abstract class PDVariableText extends PDField    // TODO mixin, not really a field
+public abstract class PDVariableText extends PDField
 {
     /**
-     * A Ff flag.
+     * Ff flags.
      */
-    public static final int FLAG_MULTILINE = 1 << 12;
-    /**
-     * A Ff flag.
-     */
-    public static final int FLAG_PASSWORD = 1 << 13;
-    /**
-     * A Ff flag.
-     */
-    public static final int FLAG_FILE_SELECT = 1 << 20;
-    /**
-     * A Ff flag.
-     */
-    public static final int FLAG_DO_NOT_SPELL_CHECK = 1 << 22;
-    /**
-     * A Ff flag.
-     */
-    public static final int FLAG_DO_NOT_SCROLL = 1 << 23;
-    /**
-     * A Ff flag.
-     */
-    public static final int FLAG_COMB = 1 << 24;
-    /**
-     * A Ff flag.
-     */
-    public static final int FLAG_RICH_TEXT = 1 << 25;
+    private static final int FLAG_MULTILINE = 1 << 12;
+    private static final int FLAG_PASSWORD = 1 << 13;
+    private static final int FLAG_FILE_SELECT = 1 << 20;
+    private static final int FLAG_DO_NOT_SPELL_CHECK = 1 << 22;
+    private static final int FLAG_DO_NOT_SCROLL = 1 << 23;
+    private static final int FLAG_COMB = 1 << 24;
+    private static final int FLAG_RICH_TEXT = 1 << 25;
 
 
     /**
      * DA    Default appearance.
      */
-    private COSString da;
-
-    private PDAppearanceString appearance;
-
+    private COSString defaultAppearance;
 
     /**
      * A Q value.
@@ -95,50 +73,15 @@ public abstract class PDVariableText extends PDField    // TODO mixin, not reall
     }
 
     /**
-     * @see org.apache.pdfbox.pdmodel.interactive.form.PDField#PDField(PDAcroForm,COSDictionary)
-     *
-     * @param theAcroForm The acroForm for this field.
-     * @param field The field's dictionary.
+     * Constructor.
+     * 
+     * @param theAcroForm The form that this field is part of.
+     * @param field the PDF object to represent as a field.
+     * @param parentNode the parent node of the node to be created
      */
-    PDVariableText(PDAcroForm theAcroForm, COSDictionary field)
+    protected PDVariableText(PDAcroForm theAcroForm, COSDictionary field, PDFieldTreeNode parentNode)
     {
-        super( theAcroForm, field);
-        da = (COSString) field.getDictionaryObject(COSName.DA);
-    }
-
-    /**
-     * @see org.apache.pdfbox.pdmodel.interactive.form.PDField#setValue(java.lang.String)
-     *
-     * @param value The new value for this text field.
-     *
-     * @throws IOException If there is an error calculating the appearance stream.
-     */
-    public void setValue(String value) throws IOException
-    {
-        COSString fieldValue = new COSString(value);
-        getDictionary().setItem( COSName.V, fieldValue );
-
-        //hmm, not sure what the case where the DV gets set to the field
-        //value, for now leave blank until we can come up with a case
-        //where it needs to be in there
-        //getDictionary().setItem( COSName.getPDFName( "DV" ), fieldValue );
-        if(appearance == null)
-        {
-            this.appearance = new PDAppearanceString( getAcroForm(), this );
-        }
-        appearance.setAppearanceValue(value);
-    }
-
-    /**
-     * getValue gets the fields value to as a string.
-     *
-     * @return The string value of this field.
-     *
-     * @throws IOException If there is an error getting the value.
-     */
-    public String getValue() throws IOException
-    {
-        return getDictionary().getString( COSName.V );
+        super( theAcroForm, field, parentNode);
     }
 
     /**
@@ -234,7 +177,7 @@ public abstract class PDVariableText extends PDField    // TODO mixin, not reall
     /**
      * @return true if the field is not suppose to comb the text display.
      */
-    public boolean shouldComb()
+    public boolean isComb()
     {
         return getDictionary().getFlag( COSName.FF, FLAG_COMB );
     }
@@ -268,11 +211,56 @@ public abstract class PDVariableText extends PDField    // TODO mixin, not reall
     }
 
     /**
+     * Get the default appearance.
+     * 
      * @return the DA element of the dictionary object
      */
-    protected COSString getDefaultAppearance()
+    public COSString getDefaultAppearance()
     {
-        return da;
+        if (defaultAppearance == null)
+        {
+            COSBase daValue =  getDictionary().getItem(COSName.DA);
+            if (daValue != null)
+            {
+                defaultAppearance = (COSString)daValue;
+            }
+        }
+        // the default appearance is inheritable
+        // maybe the parent provides a default appearance
+        if (defaultAppearance == null)
+        {
+            PDFieldTreeNode parent = getParent();
+            if (parent instanceof PDVariableText)
+            {
+                defaultAppearance = ((PDVariableText)parent).getDefaultAppearance();
+            }
+        }
+        // the default appearance is inheritable
+        // the acroform should provide a default appearance
+        if (defaultAppearance == null)
+        {
+            defaultAppearance = getAcroForm().getDefaultAppearance(); 
+        }
+        return defaultAppearance;
+    }
+
+    /**
+     * Set the default appearance.
+     * 
+     * @param daValue a string describing the default appearance
+     */
+    public void setDefaultAppearance(String daValue)
+    {
+        if (daValue != null)
+        {
+            defaultAppearance = new COSString(daValue);
+            getDictionary().setItem(COSName.DA, defaultAppearance);
+        }
+        else
+        {
+            defaultAppearance = null;
+            getDictionary().removeItem(COSName.DA);
+        }
     }
 
     /**
@@ -292,6 +280,12 @@ public abstract class PDVariableText extends PDField    // TODO mixin, not reall
         {
             retval = number.intValue();
         }
+        else
+        {
+            // the Q value is inheritable
+            // the acroform should provide a Q default value
+            retval = getAcroForm().getQ();
+        }
         return retval;
     }
 
@@ -304,4 +298,19 @@ public abstract class PDVariableText extends PDField    // TODO mixin, not reall
     {
         getDictionary().setInt( COSName.Q, q );
     }
+    
+    @Override
+    public Object getDefaultValue()
+    {
+        // Text fields don't support the "DV" entry.
+        return null;
+    }
+
+    @Override
+    public void setDefaultValue(Object value)
+    {
+        // Text fields don't support the "DV" entry.
+        throw new RuntimeException( "Text fields don't support the \"DV\" entry." );
+    }
+
 }

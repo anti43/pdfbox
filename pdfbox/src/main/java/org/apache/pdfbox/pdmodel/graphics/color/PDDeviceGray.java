@@ -33,7 +33,7 @@ public final class PDDeviceGray extends PDDeviceColorSpace implements DirectBiTo
 {
     /** The single instance of this class. */
     public static final PDDeviceGray INSTANCE = new PDDeviceGray();
-    private static final PDColor INITIAL_COLOR = new PDColor(new float[] { 0 });
+    private static final PDColor INITIAL_COLOR = new PDColor(new float[] { 0 }, INSTANCE);
 
     private PDDeviceGray()
     {

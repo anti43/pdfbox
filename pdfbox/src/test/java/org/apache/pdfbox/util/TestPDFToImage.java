@@ -155,20 +155,18 @@ public class TestPDFToImage extends TestCase
                 int rgb2 = bim2.getRGB(x, y);
                 if (rgb1 != rgb2
                         // don't bother about differences of 1 color step
-                        && (Math.abs((rgb1 & 0xFF) - (rgb2 & 0xFF)) > 1)
-                        && (Math.abs(((rgb1 >> 8) & 0xFF) - ((rgb2 >> 8) & 0xFF)) > 1)
-                        && (Math.abs(((rgb1 >> 16) & 0xFF) - ((rgb2 >> 16) & 0xFF)) > 1))
+                        && (Math.abs((rgb1 & 0xFF) - (rgb2 & 0xFF)) > 1
+                        || Math.abs(((rgb1 >> 8) & 0xFF) - ((rgb2 >> 8) & 0xFF)) > 1
+                        || Math.abs(((rgb1 >> 16) & 0xFF) - ((rgb2 >> 16) & 0xFF)) > 1))
                 {
                     if (bim3 == null)
                     {
                         bim3 = createEmptyDiffImage(minWidth, minHeight, maxWidth, maxHeight);
                     }
-                    int rgb3 = (rgb1 ^ rgb2) & 0x7f7f7f;  // 7f is to avoid colors that are too light and won't be seen
-                    if (rgb3 == 0)
-                    {
-                        rgb3 = 0x808080;
-                    }
-                    bim3.setRGB(x, y, rgb3);
+                    int r = Math.abs((rgb1 & 0xFF) - (rgb2 & 0xFF));
+                    int g = Math.abs((rgb1 & 0xFF00) - (rgb2 & 0xFF00));
+                    int b = Math.abs((rgb1 & 0xFF0000) - (rgb2 & 0xFF0000));
+                    bim3.setRGB(x, y, 0xFFFFFF - (r | g | b));
                 }
                 else
                 {
@@ -217,7 +215,7 @@ public class TestPDFToImage extends TestCase
             {
                 // Check for version difference between load() and loadNonSeq()
                 new FileOutputStream(new File(outDir + file.getName() + ".parseseqerror")).close();
-                PDDocument doc2 = PDDocument.load(file, null);
+                PDDocument doc2 = PDDocument.load(file);
                 if (doc2.getDocument().getVersion() != document.getDocument().getVersion())
                 {
                     new FileOutputStream(new File(outDir + file.getName() + ".versiondiff")).close();
@@ -238,7 +236,7 @@ public class TestPDFToImage extends TestCase
                 new File(fileName + ".rendererror").delete();
                 LOG.info("Writing: " + fileName);
                 new FileOutputStream(new File(fileName + ".writeerror")).close();
-                ImageIOUtil.writeImage(image, fileName, 96);
+                ImageIO.write(image, "PNG", new File(fileName));
                 new File(fileName + ".writeerror").delete();
             }
 

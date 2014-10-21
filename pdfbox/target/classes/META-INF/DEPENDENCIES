@@ -11,11 +11,11 @@ From: 'an unknown organization'
     License: Apache License, Version 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
   - java-image-scaling (http://code.google.com/p/java-image-scaling) com.mortennobel:java-image-scaling:jar:0.8.5
     License: GNU LESSER GENERAL PUBLIC LICENSE  Version 3  (http://www.gnu.org/licenses/gpl-3.0.txt)
-  - Bouncy Castle S/MIME API (http://www.bouncycastle.org/java.html) org.bouncycastle:bcmail-jdk15on:jar:1.50
+  - Bouncy Castle S/MIME API (http://www.bouncycastle.org/java.html) org.bouncycastle:bcmail-jdk15on:jar:1.51
     License: Bouncy Castle Licence  (http://www.bouncycastle.org/licence.html)
-  - Bouncy Castle PKIX, CMS, EAC, TSP, PKCS, OCSP, CMP, and CRMF APIs (http://www.bouncycastle.org/java.html) org.bouncycastle:bcpkix-jdk15on:jar:1.50
+  - Bouncy Castle PKIX, CMS, EAC, TSP, PKCS, OCSP, CMP, and CRMF APIs (http://www.bouncycastle.org/java.html) org.bouncycastle:bcpkix-jdk15on:jar:1.51
     License: Bouncy Castle Licence  (http://www.bouncycastle.org/licence.html)
-  - Bouncy Castle Provider (http://www.bouncycastle.org/java.html) org.bouncycastle:bcprov-jdk15on:jar:1.50
+  - Bouncy Castle Provider (http://www.bouncycastle.org/java.html) org.bouncycastle:bcprov-jdk15on:jar:1.51
     License: Bouncy Castle Licence  (http://www.bouncycastle.org/licence.html)
 
 From: 'The Apache Software Foundation' (http://pdfbox.apache.org)
@@ -23,7 +23,7 @@ From: 'The Apache Software Foundation' (http://pdfbox.apache.org)
     License: The Apache Software License, Version 2.0  (http://www.apache.org/licenses/LICENSE-2.0.txt)
 
 From: 'The Apache Software Foundation' (http://www.apache.org/)
-  - Commons Logging (http://commons.apache.org/proper/commons-logging/) commons-logging:commons-logging:jar:1.1.3
+  - Apache Commons Logging (http://commons.apache.org/proper/commons-logging/) commons-logging:commons-logging:jar:1.2
     License: The Apache Software License, Version 2.0  (http://www.apache.org/licenses/LICENSE-2.0.txt)
 
 

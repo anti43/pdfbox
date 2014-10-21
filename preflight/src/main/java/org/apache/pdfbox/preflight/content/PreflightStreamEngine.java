@@ -30,7 +30,6 @@ import static org.apache.pdfbox.preflight.PreflightConstants.MAX_GRAPHIC_STATES;
 
 import java.awt.color.ICC_ColorSpace;
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -55,38 +54,39 @@ import org.apache.pdfbox.preflight.graphic.ICCProfileWrapper;
 import org.apache.pdfbox.preflight.utils.COSUtils;
 import org.apache.pdfbox.preflight.utils.FilterHelper;
 import org.apache.pdfbox.preflight.utils.RenderingIntents;
-import org.apache.pdfbox.util.operator.DrawObject;
-import org.apache.pdfbox.util.operator.Operator;
-import org.apache.pdfbox.util.PDFStreamEngine;
-import org.apache.pdfbox.util.operator.text.BeginText;
-import org.apache.pdfbox.util.operator.state.Concatenate;
-import org.apache.pdfbox.util.operator.text.EndText;
-import org.apache.pdfbox.util.operator.state.Restore;
-import org.apache.pdfbox.util.operator.state.Save;
-import org.apache.pdfbox.util.operator.text.MoveText;
-import org.apache.pdfbox.util.operator.text.MoveTextSetLeading;
-import org.apache.pdfbox.util.operator.text.NextLine;
-import org.apache.pdfbox.util.operator.OperatorProcessor;
-import org.apache.pdfbox.util.operator.text.SetCharSpacing;
-import org.apache.pdfbox.util.operator.text.SetHorizontalTextScaling;
-import org.apache.pdfbox.util.operator.state.SetLineCapStyle;
-import org.apache.pdfbox.util.operator.state.SetLineDashPattern;
-import org.apache.pdfbox.util.operator.state.SetLineJoinStyle;
-import org.apache.pdfbox.util.operator.state.SetLineWidth;
-import org.apache.pdfbox.util.operator.state.SetMatrix;
-import org.apache.pdfbox.util.operator.color.SetNonStrokingDeviceCMYKColor;
-import org.apache.pdfbox.util.operator.color.SetNonStrokingColor;
-import org.apache.pdfbox.util.operator.color.SetNonStrokingColorSpace;
-import org.apache.pdfbox.util.operator.color.SetNonStrokingDeviceRGBColor;
-import org.apache.pdfbox.util.operator.color.SetStrokingDeviceCMYKColor;
-import org.apache.pdfbox.util.operator.color.SetStrokingColor;
-import org.apache.pdfbox.util.operator.color.SetStrokingColorSpace;
-import org.apache.pdfbox.util.operator.color.SetStrokingDeviceRGBColor;
-import org.apache.pdfbox.util.operator.text.SetTextFont;
-import org.apache.pdfbox.util.operator.text.SetTextLeading;
-import org.apache.pdfbox.util.operator.text.SetTextRenderingMode;
-import org.apache.pdfbox.util.operator.text.SetTextRise;
-import org.apache.pdfbox.util.operator.text.SetWordSpacing;
+import org.apache.pdfbox.contentstream.operator.DrawObject;
+import org.apache.pdfbox.contentstream.operator.Operator;
+import org.apache.pdfbox.contentstream.PDFStreamEngine;
+import org.apache.pdfbox.contentstream.operator.color.SetNonStrokingColorN;
+import org.apache.pdfbox.contentstream.operator.color.SetStrokingColorN;
+import org.apache.pdfbox.contentstream.operator.text.BeginText;
+import org.apache.pdfbox.contentstream.operator.state.Concatenate;
+import org.apache.pdfbox.contentstream.operator.text.EndText;
+import org.apache.pdfbox.contentstream.operator.state.Restore;
+import org.apache.pdfbox.contentstream.operator.state.Save;
+import org.apache.pdfbox.contentstream.operator.text.MoveText;
+import org.apache.pdfbox.contentstream.operator.text.MoveTextSetLeading;
+import org.apache.pdfbox.contentstream.operator.text.NextLine;
+import org.apache.pdfbox.contentstream.operator.text.SetCharSpacing;
+import org.apache.pdfbox.contentstream.operator.text.SetFontAndSize;
+import org.apache.pdfbox.contentstream.operator.text.SetTextHorizontalScaling;
+import org.apache.pdfbox.contentstream.operator.state.SetLineCapStyle;
+import org.apache.pdfbox.contentstream.operator.state.SetLineDashPattern;
+import org.apache.pdfbox.contentstream.operator.state.SetLineJoinStyle;
+import org.apache.pdfbox.contentstream.operator.state.SetLineWidth;
+import org.apache.pdfbox.contentstream.operator.state.SetMatrix;
+import org.apache.pdfbox.contentstream.operator.color.SetNonStrokingDeviceCMYKColor;
+import org.apache.pdfbox.contentstream.operator.color.SetNonStrokingColor;
+import org.apache.pdfbox.contentstream.operator.color.SetNonStrokingColorSpace;
+import org.apache.pdfbox.contentstream.operator.color.SetNonStrokingDeviceRGBColor;
+import org.apache.pdfbox.contentstream.operator.color.SetStrokingDeviceCMYKColor;
+import org.apache.pdfbox.contentstream.operator.color.SetStrokingColor;
+import org.apache.pdfbox.contentstream.operator.color.SetStrokingColorSpace;
+import org.apache.pdfbox.contentstream.operator.color.SetStrokingDeviceRGBColor;
+import org.apache.pdfbox.contentstream.operator.text.SetTextLeading;
+import org.apache.pdfbox.contentstream.operator.text.SetTextRenderingMode;
+import org.apache.pdfbox.contentstream.operator.text.SetTextRise;
+import org.apache.pdfbox.contentstream.operator.text.SetWordSpacing;
 
 /**
  * This class inherits from org.apache.pdfbox.util.PDFStreamEngine to allow the validation of specific rules in
@@ -100,12 +100,8 @@ public abstract class PreflightStreamEngine extends PDFStreamEngine
     }
 
     protected PreflightContext context = null;
-
     protected COSDocument cosDocument = null;
-
     protected PDPage processeedPage = null;
-
-    protected Map<String, OperatorProcessor> contentStreamEngineOperators = new HashMap<String, OperatorProcessor>();
 
     public PreflightStreamEngine(PreflightContext _context, PDPage _page)
     {
@@ -115,108 +111,102 @@ public abstract class PreflightStreamEngine extends PDFStreamEngine
         this.processeedPage = _page;
 
         // Graphics operators
-        registerOperatorProcessor("w", new SetLineWidth());
-        registerOperatorProcessor("cm", new Concatenate());
+        addOperator(new SetLineWidth());
+        addOperator(new Concatenate());
 
-        registerOperatorProcessor("CS", new SetStrokingColorSpace());
-        registerOperatorProcessor("cs", new SetNonStrokingColorSpace());
-        registerOperatorProcessor("d", new SetLineDashPattern());
-        registerOperatorProcessor("Do", new DrawObject());
+        addOperator(new SetStrokingColorSpace());
+        addOperator(new SetNonStrokingColorSpace());
+        addOperator(new SetLineDashPattern());
+        addOperator(new DrawObject());
 
-        registerOperatorProcessor("j", new SetLineJoinStyle());
-        registerOperatorProcessor("J", new SetLineCapStyle());
-        registerOperatorProcessor("K", new SetStrokingDeviceCMYKColor());
-        registerOperatorProcessor("k", new SetNonStrokingDeviceCMYKColor());
+        addOperator(new SetLineJoinStyle());
+        addOperator(new SetLineCapStyle());
+        addOperator(new SetStrokingDeviceCMYKColor());
+        addOperator( new SetNonStrokingDeviceCMYKColor());
 
-        registerOperatorProcessor("rg", new SetNonStrokingDeviceRGBColor());
-        registerOperatorProcessor("RG", new SetStrokingDeviceRGBColor());
+        addOperator(new SetNonStrokingDeviceRGBColor());
+        addOperator(new SetStrokingDeviceRGBColor());
 
-        registerOperatorProcessor("SC", new SetStrokingColor());
-        registerOperatorProcessor("SCN", new SetStrokingColor());
-        registerOperatorProcessor("sc", new SetNonStrokingColor());
-        registerOperatorProcessor("scn", new SetNonStrokingColor());
+        addOperator(new SetStrokingColor());
+        addOperator(new SetStrokingColorN());
+        addOperator(new SetNonStrokingColor());
+        addOperator( new SetNonStrokingColorN());
 
         // Graphics state
-        registerOperatorProcessor("Q", new Restore());
-        registerOperatorProcessor("q", new Save());
+        addOperator(new Restore());
+        addOperator(new Save());
 
         // Text operators
-        registerOperatorProcessor("BT", new BeginText());
-        registerOperatorProcessor("ET", new EndText());
-        registerOperatorProcessor("Tf", new SetTextFont());
-        registerOperatorProcessor("Tr", new SetTextRenderingMode());
-        registerOperatorProcessor("Tm", new SetMatrix());
-        registerOperatorProcessor("Td", new MoveText());
-        registerOperatorProcessor("T*", new NextLine());
-        registerOperatorProcessor("TD", new MoveTextSetLeading());
-        registerOperatorProcessor("Tc", new SetCharSpacing());
-        registerOperatorProcessor("TL", new SetTextLeading());
-        registerOperatorProcessor("Ts", new SetTextRise());
-        registerOperatorProcessor("Tw", new SetWordSpacing());
-        registerOperatorProcessor("Tz", new SetHorizontalTextScaling());
+        addOperator(new BeginText());
+        addOperator(new EndText());
+        addOperator(new SetFontAndSize());
+        addOperator(new SetTextRenderingMode());
+        addOperator(new SetMatrix());
+        addOperator(new MoveText());
+        addOperator(new NextLine());
+        addOperator(new MoveTextSetLeading());
+        addOperator(new SetCharSpacing());
+        addOperator(new SetTextLeading());
+        addOperator(new SetTextRise());
+        addOperator(new SetWordSpacing());
+        addOperator(new SetTextHorizontalScaling());
 
         /*
          * Do not use the PDFBox Operator, because of the PageDrawer class cast Or because the Operator doesn't exist
          */
-        StubOperator stubOp = new StubOperator();
-        registerOperatorProcessor("l", stubOp);
-        registerOperatorProcessor("re", stubOp);
-        registerOperatorProcessor("c", stubOp);
-        registerOperatorProcessor("y", stubOp);
-        registerOperatorProcessor("v", stubOp);
-        registerOperatorProcessor("n", stubOp);
-        registerOperatorProcessor("BI", stubOp);
-        registerOperatorProcessor("ID", stubOp);
-        registerOperatorProcessor("EI", stubOp);
-        registerOperatorProcessor("m", stubOp);
-        registerOperatorProcessor("W*", stubOp);
-        registerOperatorProcessor("W", stubOp);
-        registerOperatorProcessor("h", stubOp);
 
-        registerOperatorProcessor("Tj", stubOp);
-        registerOperatorProcessor("TJ", stubOp);
-        registerOperatorProcessor("'", stubOp);
-        registerOperatorProcessor("\"", stubOp);
+        addOperator(new StubOperator("l"));
+        addOperator(new StubOperator("re"));
+        addOperator(new StubOperator("c"));
+        addOperator(new StubOperator("y"));
+        addOperator(new StubOperator("v"));
+        addOperator(new StubOperator("n"));
+        addOperator(new StubOperator("BI"));
+        addOperator(new StubOperator("ID"));
+        addOperator(new StubOperator("EI"));
+        addOperator(new StubOperator("m"));
+        addOperator(new StubOperator("W*"));
+        addOperator(new StubOperator("W"));
+        addOperator(new StubOperator("h"));
 
-        registerOperatorProcessor("b", stubOp);
-        registerOperatorProcessor("B", stubOp);
-        registerOperatorProcessor("b*", stubOp);
-        registerOperatorProcessor("B*", stubOp);
+        addOperator(new StubOperator("Tj"));
+        addOperator(new StubOperator("TJ"));
+        addOperator(new StubOperator("'"));
+        addOperator(new StubOperator("\""));
 
-        registerOperatorProcessor("BDC", stubOp);
-        registerOperatorProcessor("BMC", stubOp);
-        registerOperatorProcessor("DP", stubOp);
-        registerOperatorProcessor("EMC", stubOp);
-        registerOperatorProcessor("BX", stubOp);
-        registerOperatorProcessor("EX", stubOp);
+        addOperator(new StubOperator("b"));
+        addOperator(new StubOperator("B"));
+        addOperator(new StubOperator("b*"));
+        addOperator(new StubOperator("B*"));
 
-        registerOperatorProcessor("d0", stubOp);
-        registerOperatorProcessor("d1", stubOp);
+        addOperator(new StubOperator("BDC"));
+        addOperator(new StubOperator("BMC"));
+        addOperator(new StubOperator("DP"));
+        addOperator(new StubOperator("EMC"));
+        addOperator(new StubOperator("BX"));
+        addOperator(new StubOperator("EX"));
 
-        registerOperatorProcessor("f", stubOp);
-        registerOperatorProcessor("F", stubOp);
-        registerOperatorProcessor("f*", stubOp);
+        addOperator(new StubOperator("d0"));
+        addOperator(new StubOperator("d1"));
 
-        registerOperatorProcessor("g", stubOp);
-        registerOperatorProcessor("G", stubOp);
+        addOperator(new StubOperator("f"));
+        addOperator(new StubOperator("F"));
+        addOperator(new StubOperator("f*"));
 
-        registerOperatorProcessor("M", stubOp);
-        registerOperatorProcessor("MP", stubOp);
+        addOperator(new StubOperator("g"));
+        addOperator(new StubOperator("G"));
 
-        registerOperatorProcessor("gs", stubOp);
-        registerOperatorProcessor("h", stubOp);
-        registerOperatorProcessor("i", stubOp);
+        addOperator(new StubOperator("M"));
+        addOperator(new StubOperator("MP"));
 
-        registerOperatorProcessor("ri", stubOp);
-        registerOperatorProcessor("s", stubOp);
-        registerOperatorProcessor("S", stubOp);
-        registerOperatorProcessor("sh", stubOp);
-    }
+        addOperator(new StubOperator("gs"));
+        addOperator(new StubOperator("h"));
+        addOperator(new StubOperator("i"));
 
-    public final void registerOperatorProcessor(String operator, OperatorProcessor op)
-    {
-        super.registerOperatorProcessor(operator, op);
-        contentStreamEngineOperators.put(operator, op);
+        addOperator(new StubOperator("ri"));
+        addOperator(new StubOperator("s"));
+        addOperator(new StubOperator("S"));
+        addOperator(new StubOperator("sh"));
     }
 
     /**
@@ -232,7 +222,7 @@ public abstract class PreflightStreamEngine extends PDFStreamEngine
      */
     protected void validRenderingIntent(Operator operator, List arguments) throws ContentStreamException
     {
-        if ("ri".equals(operator.getOperation()))
+        if ("ri".equals(operator.getName()))
         {
             String riArgument0 = "";
             if (arguments.get(0) instanceof COSName)
@@ -248,7 +238,6 @@ public abstract class PreflightStreamEngine extends PDFStreamEngine
             {
                 registerError("Unexpected value '" + arguments.get(0) + "' for ri operand. ",
                         ERROR_GRAPHIC_UNEXPECTED_VALUE_FOR_KEY);
-                return;
             }
         }
     }
@@ -261,13 +250,12 @@ public abstract class PreflightStreamEngine extends PDFStreamEngine
      */
     protected void validNumberOfGraphicStates(Operator operator) throws ContentStreamException
     {
-        if ("q".equals(operator.getOperation()))
+        if ("q".equals(operator.getName()))
         {
             int numberOfGraphicStates = this.getGraphicsStackSize();
             if (numberOfGraphicStates > MAX_GRAPHIC_STATES)
             {
                 registerError("Too many graphic states", ERROR_GRAPHIC_TOO_MANY_GRAPHIC_STATES);
-                return;
             }
         }
     }
@@ -319,7 +307,7 @@ public abstract class PreflightStreamEngine extends PDFStreamEngine
                 {
                     // The color space is unknown. Try to access the resources dictionary,
                     // the color space can be a reference.
-                    PDColorSpace pdCS = (PDColorSpace) this.getResources().getColorSpaces().get(colorSpace);
+                    PDColorSpace pdCS = this.getResources().getColorSpace(COSName.getPDFName(colorSpace));
                     if (pdCS != null)
                     {
                         cs = ColorSpaces.valueOf(pdCS.getName());
@@ -397,7 +385,6 @@ public abstract class PreflightStreamEngine extends PDFStreamEngine
                 // The default fill color needs an OutputIntent
                 registerError("The operator \"" + operation + "\" can't be used without Color Profile",
                         ERROR_GRAPHIC_INVALID_COLOR_SPACE_MISSING);
-                return;
             }
         }
     }
@@ -509,12 +496,12 @@ public abstract class PreflightStreamEngine extends PDFStreamEngine
      */
     protected void checkSetColorSpaceOperators(Operator operator, List<?> arguments) throws IOException
     {
-        if (!("CS".equals(operator.getOperation()) || "cs".equals(operator.getOperation())))
+        if (!("CS".equals(operator.getName()) || "cs".equals(operator.getName())))
         {
             return;
         }
 
-        String colorSpaceName = null;
+        String colorSpaceName;
         if (arguments.get(0) instanceof String)
         {
             colorSpaceName = (String) arguments.get(0);
@@ -544,7 +531,7 @@ public abstract class PreflightStreamEngine extends PDFStreamEngine
             /*
              * The color space is unknown. Try to access the resources dictionary, the color space can be a reference.
              */
-            PDColorSpace pdCS = (PDColorSpace) this.getResources().getColorSpaces().get(colorSpaceName);
+            PDColorSpace pdCS = this.getResources().getColorSpace(COSName.getPDFName(colorSpaceName));
             if (pdCS != null)
             {
                 cs = ColorSpaces.valueOf(pdCS.getName());
@@ -581,12 +568,23 @@ public abstract class PreflightStreamEngine extends PDFStreamEngine
      */
     protected void registerError(String msg, String errorCode)
     {
-        registerError(msg, errorCode, false);
+        registerError(msg, errorCode, null);
+    }
+
+    public void registerError(String msg, String errorCode, Throwable cause)
+    {
+        registerError(msg, errorCode, false, cause);
     }
     
     protected void registerError(String msg, String errorCode, boolean warning)
     {
-        ValidationError error = new ValidationError(errorCode, msg);
+        registerError(msg, errorCode, warning, null);
+    }
+
+    public void registerError(String msg, String errorCode, boolean warning,
+            Throwable cause)
+    {
+        ValidationError error = new ValidationError(errorCode, msg, cause);
         error.setWarning(warning);
         this.context.addValidationError(error);
     }

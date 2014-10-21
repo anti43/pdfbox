@@ -102,7 +102,7 @@ public class ExtractText
         boolean separateBeads = true;
         boolean useNonSeqParser = false; 
         String password = "";
-        String encoding = null;
+        String encoding = "UTF-8";
         String pdfFile = null;
         String outputFile = null;
         // Defaults to text files
@@ -207,7 +207,7 @@ public class ExtractText
                 }
                 if (useNonSeqParser) 
                 {
-                    document = PDDocument.loadNonSeq(new File( pdfFile ), null, password);
+                    document = PDDocument.loadNonSeq(new File( pdfFile ), password);
                 }
                 else
                 {
@@ -227,39 +227,23 @@ public class ExtractText
                 
                 stopProcessing("Time for loading: ", startTime);
 
-
-                if ((encoding == null) && (toHTML))
-                {
-                    encoding = "UTF-8";
-                }
-
                 if( toConsole )
                 {
-                    output = new OutputStreamWriter( System.out );
+                    output = new OutputStreamWriter( System.out, encoding );
                 }
                 else
                 {
-                    if( encoding != null )
-                    {
-                        output = new OutputStreamWriter(
-                                new FileOutputStream( outputFile ), encoding );
-                    }
-                    else
-                    {
-                        //use default encoding
-                        output = new OutputStreamWriter(
-                                new FileOutputStream( outputFile ) );
-                    }
+                    output = new OutputStreamWriter( new FileOutputStream( outputFile ), encoding );
                 }
 
-                PDFTextStripper stripper = null;
+                PDFTextStripper stripper;
                 if(toHTML)
                 {
-                    stripper = new PDFText2HTML(encoding);
+                    stripper = new PDFText2HTML();
                 }
                 else
                 {
-                    stripper = new PDFTextStripper(encoding);
+                    stripper = new PDFTextStripper();
                 }
                 stripper.setForceParsing( force );
                 stripper.setSortByPosition( sort );
@@ -365,7 +349,7 @@ public class ExtractText
     {
         System.err.println( "Usage: java -jar pdfbox-app-x.y.z.jar ExtractText [OPTIONS] <PDF file> [Text File]\n" +
             "  -password  <password>        Password to decrypt document\n" +
-            "  -encoding  <output encoding> (ISO-8859-1,UTF-16BE,UTF-16LE,...)\n" +
+            "  -encoding  <output encoding> UTF-8 (default) or ISO-8859-1, UTF-16BE, UTF-16LE, etc.\n" +
             "  -console                     Send text to console instead of file\n" +
             "  -html                        Output in HTML format instead of raw text\n" +
             "  -sort                        Sort the text before writing\n" +

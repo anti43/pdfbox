@@ -25,11 +25,11 @@ import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_FONTS_ENCODIN
 
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSName;
-import org.apache.pdfbox.encoding.Encoding;
-import org.apache.pdfbox.encoding.MacRomanEncoding;
-import org.apache.pdfbox.encoding.WinAnsiEncoding;
-import org.apache.pdfbox.pdmodel.font.PDFont;
+import org.apache.pdfbox.pdmodel.font.encoding.Encoding;
+import org.apache.pdfbox.pdmodel.font.encoding.MacRomanEncoding;
+import org.apache.pdfbox.pdmodel.font.encoding.WinAnsiEncoding;
 import org.apache.pdfbox.pdmodel.font.PDFontDescriptor;
+import org.apache.pdfbox.pdmodel.font.PDTrueTypeFont;
 import org.apache.pdfbox.preflight.PreflightContext;
 import org.apache.pdfbox.preflight.ValidationResult.ValidationError;
 import org.apache.pdfbox.preflight.font.container.TrueTypeContainer;
@@ -37,20 +37,23 @@ import org.apache.pdfbox.preflight.font.descriptor.TrueTypeDescriptorHelper;
 
 public class TrueTypeFontValidator extends SimpleFontValidator<TrueTypeContainer>
 {
-
-    public TrueTypeFontValidator(PreflightContext context, PDFont font)
+    public TrueTypeFontValidator(PreflightContext context, PDTrueTypeFont font)
     {
-        super(context, font, new TrueTypeContainer(font));
+        super(context, font, font.getCOSObject(), new TrueTypeContainer(font));
     }
 
+    @Override
     protected void createFontDescriptorHelper()
     {
-        this.descriptorHelper = new TrueTypeDescriptorHelper(context, font, fontContainer);
+        this.descriptorHelper = new TrueTypeDescriptorHelper(context, (PDTrueTypeFont) font, fontContainer);
     }
 
+    @Override
     protected void checkEncoding()
     {
-        PDFontDescriptor fd = this.font.getFontDescriptor();
+        PDTrueTypeFont ttFont = (PDTrueTypeFont) font;
+                
+        PDFontDescriptor fd = ttFont.getFontDescriptor();
         if (fd != null)
         {
             /*
@@ -58,7 +61,7 @@ public class TrueTypeFontValidator extends SimpleFontValidator<TrueTypeContainer
              */
             if (fd.isNonSymbolic())
             {
-                Encoding encodingValue = this.font.getFontEncoding();
+                Encoding encodingValue = ttFont.getEncoding();
                 if (encodingValue == null
                         || !(encodingValue instanceof MacRomanEncoding || encodingValue instanceof WinAnsiEncoding))
                 {
@@ -71,7 +74,7 @@ public class TrueTypeFontValidator extends SimpleFontValidator<TrueTypeContainer
              * For symbolic font, no encoding entry is allowed and only one encoding entry is expected into the FontFile
              * CMap (Check latter when the FontFile stream will be checked)
              */
-            if (fd.isSymbolic() && ((COSDictionary) this.font.getCOSObject()).getItem(COSName.ENCODING) != null)
+            if (fd.isSymbolic() && ((COSDictionary) fontDictionary).getItem(COSName.ENCODING) != null)
             {
                 this.fontContainer.push(new ValidationError(ERROR_FONTS_ENCODING,
                         "The Encoding should be missing for the Symbolic TTF"));

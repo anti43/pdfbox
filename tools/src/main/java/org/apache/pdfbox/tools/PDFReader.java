@@ -33,14 +33,14 @@ import javax.swing.JScrollPane;
 import javax.swing.KeyStroke;
 
 import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
-import org.apache.pdfbox.rendering.PDFPrinter;
+import org.apache.pdfbox.printing.PDFPrinter;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.tools.gui.PageWrapper;
 import org.apache.pdfbox.tools.gui.ReaderBottomPanel;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.encryption.StandardDecryptionMaterial;
-import org.apache.pdfbox.util.ImageIOUtil;
+import org.apache.pdfbox.tools.imageio.ImageIOUtil;
 
 /**
  * An proof-of-concept application to read PDF documents, with very basic functionality.
@@ -384,7 +384,7 @@ public class PDFReader extends JFrame
         document = null;
         if (useNonSeqParser)
         {
-            document = PDDocument.loadNonSeq(file, null, password);
+            document = PDDocument.loadNonSeq(file, password);
         }
         else
         {

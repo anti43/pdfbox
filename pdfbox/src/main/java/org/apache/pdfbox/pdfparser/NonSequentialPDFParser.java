@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -37,6 +38,7 @@ import java.util.Map.Entry;
 import java.util.Queue;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.Vector;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -52,8 +54,6 @@ import org.apache.pdfbox.cos.COSStream;
 import org.apache.pdfbox.cos.COSString;
 import org.apache.pdfbox.io.IOUtils;
 import org.apache.pdfbox.io.PushBackInputStream;
-import org.apache.pdfbox.io.RandomAccess;
-import org.apache.pdfbox.io.RandomAccessBuffer;
 import org.apache.pdfbox.io.RandomAccessBufferedFileInputStream;
 import org.apache.pdfbox.pdfparser.XrefTrailerResolver.XRefType;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -66,25 +66,21 @@ import org.apache.pdfbox.pdmodel.encryption.StandardDecryptionMaterial;
 import org.apache.pdfbox.persistence.util.COSObjectKey;
 
 /**
- * PDFParser which first reads startxref and xref tables in order to know valid
- * objects and parse only these objects. Thus it is closer to a conforming
- * parser than the sequential reading of {@link PDFParser}.
+ * PDFParser which first reads startxref and xref tables in order to know valid objects and parse only these objects.
+ * Thus it is closer to a conforming parser than the sequential reading of {@link PDFParser}.
  * 
- * This class can be used as a {@link PDFParser} replacement. First
- * {@link #parse()} must be called before page objects can be retrieved, e.g.
- * {@link #getPDDocument()}.
+ * This class can be used as a {@link PDFParser} replacement. First {@link #parse()} must be called before page objects
+ * can be retrieved, e.g. {@link #getPDDocument()}.
  * 
- * This class is a much enhanced version of <code>QuickParser</code> presented
- * in <a
- * href="https://issues.apache.org/jira/browse/PDFBOX-1104">PDFBOX-1104</a> by
- * Jeremy Villalobos.
+ * This class is a much enhanced version of <code>QuickParser</code> presented in <a
+ * href="https://issues.apache.org/jira/browse/PDFBOX-1104">PDFBOX-1104</a> by Jeremy Villalobos.
  */
 public class NonSequentialPDFParser extends PDFParser
 {
-    private static final byte[] XREF = new byte[] { 'x', 'r', 'e', 'f' };
-
-    private static final int E = 'e';
-    private static final int N = 'n';
+    private static final byte[] XREF_TABLE = new byte[] { 'x', 'r', 'e', 'f' };
+    private static final byte[] XREF_STREAM = new byte[] { '/','X', 'R', 'e', 'f' };
+    private static final long MINIMUM_SEARCH_OFFSET = 6;
+    
     private static final int X = 'x';
 
     public static final String SYSPROP_PARSEMINIMAL = "org.apache.pdfbox.pdfparser.nonSequentialPDFParser.parseMinimal";
@@ -100,7 +96,8 @@ public class NonSequentialPDFParser extends PDFParser
     /**
      * StartXRef-marker.
      */
-    protected static final char[] STARTXREF_MARKER = new char[] { 's', 't', 'a', 'r', 't', 'x', 'r', 'e', 'f' };
+    protected static final char[] STARTXREF_MARKER = new char[] { 's', 't', 'a', 'r', 't', 'x',
+            'r', 'e', 'f' };
     /**
      * obj-marker.
      */
@@ -116,25 +113,29 @@ public class NonSequentialPDFParser extends PDFParser
     private boolean isLenient = true;
 
     /**
+     * Contains all found objects of a brute force search
+     */
+    private HashMap<String, Long> bfSearchObjectOffsets = null;
+    private Vector<Long> bfSearchXRefOffsets = null;
+
+    /**
      * The security handler.
      */
     protected SecurityHandler securityHandler = null;
 
-    private String keyStoreFilename = null;
-    private String alias = null;
+    private final String keyStoreFilename = null;
+    private final String alias = null;
     private String password = "";
     private int readTrailBytes = DEFAULT_TRAIL_BYTECOUNT; // how many trailing
                                                           // bytes to read for
                                                           // EOF marker
 
     /**
-     * If <code>true</code> object references in catalog are not followed; pro:
-     * page objects will be only parsed when needed; cons: some information of
-     * catalog might not be available (e.g. outline). Catalog parsing without
-     * pages is not an option since a number of entries will also refer to page
-     * objects (like OpenAction).
+     * If <code>true</code> object references in catalog are not followed; pro: page objects will be only parsed when
+     * needed; cons: some information of catalog might not be available (e.g. outline). Catalog parsing without pages is
+     * not an option since a number of entries will also refer to page objects (like OpenAction).
      */
-    private boolean parseMinimalCatalog = "true".equals(System.getProperty(SYSPROP_PARSEMINIMAL));
+    private final boolean parseMinimalCatalog = "true".equals(System.getProperty(SYSPROP_PARSEMINIMAL));
 
     private boolean initialParseDone = false;
     private boolean allPagesParsed = false;
@@ -142,9 +143,8 @@ public class NonSequentialPDFParser extends PDFParser
     private static final Log LOG = LogFactory.getLog(NonSequentialPDFParser.class);
 
     /**
-     * <code>true</code> if the NonSequentialPDFParser is initialized by a
-     * InputStream, in this case a temporary file is created. At the end of the
-     * {@linkplain #parse()} method,the temporary file will be deleted.
+     * <code>true</code> if the NonSequentialPDFParser is initialized by a InputStream, in this case a temporary file is
+     * created. At the end of the {@linkplain #parse()} method,the temporary file will be deleted.
      */
     private boolean isTmpPDFFile = false;
 
@@ -160,30 +160,19 @@ public class NonSequentialPDFParser extends PDFParser
      */
     public NonSequentialPDFParser(String filename) throws IOException
     {
-        this(new File(filename), null);
+        this(new File(filename), null, false);
     }
 
     /**
-     * Constructs parser for given file using given buffer for temporary
-     * storage.
+     * Constructs parser for given file using memory buffer.
      * 
-     * @param file the pdf to be parsed
-     * @param raBuf the buffer to be used for parsing
+     * @param filename the filename of the pdf to be parsed
      * 
      * @throws IOException If something went wrong.
      */
-    /**
-     * Constructs parser for given file using given buffer for temporary
-     * storage.
-     * 
-     * @param file the pdf to be parsed
-     * @param raBuf the buffer to be used for parsing
-     * 
-     * @throws IOException If something went wrong.
-     */
-    public NonSequentialPDFParser(File file, RandomAccess raBuf) throws IOException
+    public NonSequentialPDFParser(String filename, boolean useScratchFiles) throws IOException
     {
-        this(file, raBuf, "");
+        this(new File(filename), null, useScratchFiles);
     }
 
     /**
@@ -191,29 +180,59 @@ public class NonSequentialPDFParser extends PDFParser
      * storage.
      * 
      * @param file the pdf to be parsed
-     * @param raBuf the buffer to be used for parsing
      * 
      * @throws IOException If something went wrong.
      */
+    public NonSequentialPDFParser(File file) throws IOException
+    {
+        this(file, "", false);
+    }
+
     /**
      * Constructs parser for given file using given buffer for temporary
      * storage.
      * 
      * @param file the pdf to be parsed
-     * @param raBuf the buffer to be used for parsing
+     * 
+     * @throws IOException If something went wrong.
+     */
+    public NonSequentialPDFParser(File file, boolean useScratchFiles) throws IOException
+    {
+        this(file, "", useScratchFiles);
+    }
+
+    /**
+     * Constructs parser for given file using given buffer for temporary storage.
+     * 
+     * @param file the pdf to be parsed
      * @param decryptionPassword password to be used for decryption
      * 
      * @throws IOException If something went wrong.
      */
-    public NonSequentialPDFParser(File file, RandomAccess raBuf, String decryptionPassword) throws IOException
+    public NonSequentialPDFParser(File file, String decryptionPassword)
+            throws IOException
     {
-        super(EMPTY_INPUT_STREAM, null, false);
-        pdfFile = file;
-        raStream = new RandomAccessBufferedFileInputStream(pdfFile);
-        init(file, raBuf, decryptionPassword);
+        this (file, decryptionPassword, false);
     }
 
-    private void init(File file, RandomAccess raBuf, String decryptionPassword) throws IOException
+    /**
+     * Constructs parser for given file using given buffer for temporary storage.
+     * 
+     * @param file the pdf to be parsed
+     * @param decryptionPassword password to be used for decryption
+     * 
+     * @throws IOException If something went wrong.
+     */
+    public NonSequentialPDFParser(File file, String decryptionPassword, boolean useScratchFiles)
+            throws IOException
+    {
+        super(EMPTY_INPUT_STREAM, false);
+        pdfFile = file;
+        raStream = new RandomAccessBufferedFileInputStream(pdfFile);
+        init(file, decryptionPassword, useScratchFiles);
+    }
+
+    private void init(File file, String decryptionPassword, boolean useScratchFiles) throws IOException
     {
         String eofLookupRangeStr = System.getProperty(SYSPROP_EOFLOOKUPRANGE);
         if (eofLookupRangeStr != null)
@@ -224,15 +243,12 @@ public class NonSequentialPDFParser extends PDFParser
             }
             catch (NumberFormatException nfe)
             {
-                LOG.warn("System property " + SYSPROP_EOFLOOKUPRANGE + " does not contain an integer value, but: '"
-                        + eofLookupRangeStr + "'");
+                LOG.warn("System property " + SYSPROP_EOFLOOKUPRANGE
+                        + " does not contain an integer value, but: '" + eofLookupRangeStr + "'");
             }
         }
-
-        setDocument((raBuf == null) ? new COSDocument(new RandomAccessBuffer(), false) : new COSDocument(raBuf, false));
-
+        setDocument(new COSDocument(false, useScratchFiles));
         pdfSource = new PushBackInputStream(raStream, 4096);
-
         password = decryptionPassword;
     }
 
@@ -244,29 +260,52 @@ public class NonSequentialPDFParser extends PDFParser
      */
     public NonSequentialPDFParser(InputStream input) throws IOException
     {
-        this(input, null, "");
+        this(input, "", false);
     }
 
     /**
      * Constructor.
      * 
      * @param input input stream representing the pdf.
-     * @param raBuf the buffer to be used for parsing
-     * @param decryptionPassword password to be used for decryption.
      * @throws IOException If something went wrong.
      */
-    public NonSequentialPDFParser(InputStream input, RandomAccess raBuf, String decryptionPassword) throws IOException
+    public NonSequentialPDFParser(InputStream input, boolean useScratchFiles) throws IOException
     {
-        super(EMPTY_INPUT_STREAM, null, false);
-        pdfFile = createTmpFile(input);
-        raStream = new RandomAccessBufferedFileInputStream(pdfFile);
-        init(pdfFile, raBuf, decryptionPassword);
+        this(input, "", useScratchFiles);
     }
 
     /**
-     * Create a temporary file with the input stream. If the creation succeed,
-     * the {@linkplain #isTmpPDFFile} is set to true. This Temporary file will
-     * be deleted at end of the parse method
+     * Constructor.
+     * 
+     * @param input input stream representing the pdf.
+     * @param decryptionPassword password to be used for decryption.
+     * @throws IOException If something went wrong.
+     */
+    public NonSequentialPDFParser(InputStream input, String decryptionPassword)
+            throws IOException
+    {
+        this(input, decryptionPassword, false);
+    }
+
+    /**
+     * Constructor.
+     * 
+     * @param input input stream representing the pdf.
+     * @param decryptionPassword password to be used for decryption.
+     * @throws IOException If something went wrong.
+     */
+    public NonSequentialPDFParser(InputStream input, String decryptionPassword, boolean useScratchFiles)
+            throws IOException
+    {
+        super(EMPTY_INPUT_STREAM, false);
+        pdfFile = createTmpFile(input);
+        raStream = new RandomAccessBufferedFileInputStream(pdfFile);
+        init(pdfFile, decryptionPassword, useScratchFiles);
+    }
+
+    /**
+     * Create a temporary file with the input stream. If the creation succeed, the {@linkplain #isTmpPDFFile} is set to
+     * true. This Temporary file will be deleted at end of the parse method
      * 
      * @param input
      * @return the temporary file
@@ -274,11 +313,10 @@ public class NonSequentialPDFParser extends PDFParser
      */
     private File createTmpFile(InputStream input) throws IOException
     {
-        File tmpFile = null;
         FileOutputStream fos = null;
         try
         {
-            tmpFile = File.createTempFile(TMP_FILE_PREFIX, ".pdf");
+            File tmpFile = File.createTempFile(TMP_FILE_PREFIX, ".pdf");
             fos = new FileOutputStream(tmpFile);
             IOUtils.copy(input, fos);
             isTmpPDFFile = true;
@@ -293,18 +331,17 @@ public class NonSequentialPDFParser extends PDFParser
 
     // ------------------------------------------------------------------------
     /**
-     * Sets how many trailing bytes of PDF file are searched for EOF marker and
-     * 'startxref' marker. If not set we use default value
-     * {@link #DEFAULT_TRAIL_BYTECOUNT}.
+     * Sets how many trailing bytes of PDF file are searched for EOF marker and 'startxref' marker. If not set we use
+     * default value {@link #DEFAULT_TRAIL_BYTECOUNT}.
      * 
-     * <p<We check that new value is at least 16. However for practical use
-     * cases this value should not be lower than 1000; even 2000 was found to
-     * not be enough in some cases where some trailing garbage like HTML
-     * snippets followed the EOF marker.</p>
+     * <p<We check that new value is at least 16. However for practical use cases this value should not be lower than
+     * 1000; even 2000 was found to not be enough in some cases where some trailing garbage like HTML snippets followed
+     * the EOF marker.</p>
      * 
-     * <p>In case system property {@link #SYSPROP_EOFLOOKUPRANGE} is defined
-     * this value will be set on initialization but can be overwritten
-     * later.</p>
+     * <p>
+     * In case system property {@link #SYSPROP_EOFLOOKUPRANGE} is defined this value will be set on initialization but
+     * can be overwritten later.
+     * </p>
      * 
      * @param byteCount number of trailing bytes
      */
@@ -318,10 +355,9 @@ public class NonSequentialPDFParser extends PDFParser
 
     // ------------------------------------------------------------------------
     /**
-     * The initial parse will first parse only the trailer, the xrefstart and
-     * all xref tables to have a pointer (offset) to all the pdf's objects. It
-     * can handle linearized pdfs, which will have an xref at the end pointing
-     * to an xref at the beginning of the file. Last the root object is parsed.
+     * The initial parse will first parse only the trailer, the xrefstart and all xref tables to have a pointer (offset)
+     * to all the pdf's objects. It can handle linearized pdfs, which will have an xref at the end pointing to an xref
+     * at the beginning of the file. Last the root object is parsed.
      * 
      * @throws IOException If something went wrong.
      */
@@ -333,8 +369,13 @@ public class NonSequentialPDFParser extends PDFParser
 
         long startXrefOffset = document.getStartXref();
         // check the startxref offset
-        if (isLenient) {
-            startXrefOffset -= calculateFixingOffset(startXrefOffset);
+        if (isLenient)
+        {
+            long fixedOffset = checkXRefOffset(startXrefOffset);
+            if (fixedOffset > -1)
+            {
+            	startXrefOffset = fixedOffset;
+            }
             document.setStartXref(startXrefOffset);
         }
         long prev = startXrefOffset;
@@ -355,47 +396,57 @@ public class NonSequentialPDFParser extends PDFParser
                 parseXrefTable(prev);
                 // parse the last trailer.
                 long trailerOffset = pdfSource.getOffset();
-                //PDFBOX-1739 skip extra xref entries in RegisSTAR documents
+                // PDFBOX-1739 skip extra xref entries in RegisSTAR documents
                 while (isLenient && pdfSource.peek() != 't')
                 {
                     if (pdfSource.getOffset() == trailerOffset)
                     {
                         // warn only the first time
-                        LOG.warn("Expected trailer object at position " + trailerOffset + ", keep trying");
+                        LOG.warn("Expected trailer object at position " + trailerOffset
+                                + ", keep trying");
                     }
                     readLine();
                 }
                 if (!parseTrailer())
                 {
-                    throw new IOException("Expected trailer object at position: " + pdfSource.getOffset());
+                    throw new IOException("Expected trailer object at position: "
+                            + pdfSource.getOffset());
                 }
                 COSDictionary trailer = xrefTrailerResolver.getCurrentTrailer();
+                // check for a XRef stream, it may contain some object ids of compressed objects 
+                if(trailer.containsKey(COSName.XREF_STM))
+                {
+                    int streamOffset = trailer.getInt(COSName.XREF_STM);
+                    setPdfSource(streamOffset);
+                    skipSpaces();
+                    parseXrefObjStream(prev, false); 
+                }
                 prev = trailer.getInt(COSName.PREV);
                 if (isLenient && prev > -1)
                 {
-                	// check the xref table reference
-                	long fixingOffset = calculateFixingOffset(prev);
-	            	if (fixingOffset != 0)
-	            	{
-	            		prev -= fixingOffset;
-	            		trailer.setLong(COSName.PREV, prev);
-	            	}
+                    // check the xref table reference
+                    long fixedOffset = checkXRefOffset(prev);
+                    if (fixedOffset > -1 && fixedOffset != prev)
+                    {
+                        prev = fixedOffset;
+                        trailer.setLong(COSName.PREV, prev);
+                    }
                 }
             }
             else
             {
                 // parse xref stream
-                prev = parseXrefObjStream(prev);
+                prev = parseXrefObjStream(prev, true);
                 if (isLenient && prev > -1)
                 {
-                	// check the xref table reference
-                	long fixingOffset = calculateFixingOffset(prev);
-	            	if (fixingOffset != 0)
-	            	{
-	            		prev -= fixingOffset;
-	                    COSDictionary trailer = xrefTrailerResolver.getCurrentTrailer();
-	            		trailer.setLong(COSName.PREV, prev);
-	            	}
+                    // check the xref table reference
+                    long fixedOffset = checkXRefOffset(prev);
+                    if (fixedOffset > -1 && fixedOffset != prev)
+                    {
+                        prev = fixedOffset;
+                        COSDictionary trailer = xrefTrailerResolver.getCurrentTrailer();
+                        trailer.setLong(COSName.PREV, prev);
+                    }
                 }
             }
         }
@@ -406,13 +457,14 @@ public class NonSequentialPDFParser extends PDFParser
         document.setTrailer(trailer);
         document.setIsXRefStream(XRefType.STREAM == xrefTrailerResolver.getXrefType());
         // check the offsets of all referenced objects
-        if (isLenient) {
+        if (isLenient)
+        {
             checkXrefOffsets();
         }
-        
+
         // ---- prepare encryption if necessary
         COSBase trailerEncryptItem = document.getTrailer().getItem(COSName.ENCRYPT);
-        if (trailerEncryptItem != null)
+        if (trailerEncryptItem != null && !(trailerEncryptItem instanceof COSNull))
         {
             if (trailerEncryptItem instanceof COSObject)
             {
@@ -437,22 +489,21 @@ public class NonSequentialPDFParser extends PDFParser
                 }
 
                 securityHandler = encryption.getSecurityHandler();
-                securityHandler.prepareForDecryption(encryption, document.getDocumentID(), decryptionMaterial);
+                securityHandler.prepareForDecryption(encryption, document.getDocumentID(),
+                        decryptionMaterial);
 
                 AccessPermission permission = securityHandler.getCurrentAccessPermission();
                 if (!permission.canExtractContent())
                 {
-                    LOG.warn("PDF file '" + pdfFile.getPath() + "' does not allow extracting content.");
+                    LOG.warn("PDF file '" + pdfFile.getPath()
+                            + "' does not allow extracting content.");
                 }
 
             }
             catch (Exception e)
             {
                 throw new IOException("Error (" + e.getClass().getSimpleName()
-                        + ") while creating security handler for decryption: " + e.getMessage() /*
-                                                                                                 * , e TODO: remove
-                                                                                                 * remark with Java 1.6
-                                                                                                 */);
+                        + ") while creating security handler for decryption",e);
             }
         }
 
@@ -490,10 +541,10 @@ public class NonSequentialPDFParser extends PDFParser
                 }
             }
         }
-        
+
         // PDFBOX-1922: read the version again now that all objects have been resolved
         readVersionInTrailer(trailer);
-        
+
         initialParseDone = true;
     }
 
@@ -501,10 +552,9 @@ public class NonSequentialPDFParser extends PDFParser
     /**
      * Parses an xref object stream starting with indirect object id.
      * 
-     * @return value of PREV item in dictionary or <code>-1</code> if no such
-     *         item exists
+     * @return value of PREV item in dictionary or <code>-1</code> if no such item exists
      */
-    private long parseXrefObjStream(long objByteOffset) throws IOException
+    private long parseXrefObjStream(long objByteOffset, boolean isStandalone) throws IOException
     {
         // ---- parse indirect object head
         readObjectNumber();
@@ -512,15 +562,15 @@ public class NonSequentialPDFParser extends PDFParser
         readPattern(OBJ_MARKER);
 
         COSDictionary dict = parseCOSDictionary();
-        COSStream xrefStream = parseCOSStream(dict, getDocument().getScratchFile());
-        parseXrefStream(xrefStream, (int) objByteOffset);
+        COSStream xrefStream = parseCOSStream(dict);
+        parseXrefStream(xrefStream, (int) objByteOffset, isStandalone);
 
         return dict.getLong(COSName.PREV);
     }
 
     // ------------------------------------------------------------------------
     /** Get current offset in file at which next byte would be read. */
-    private final long getPdfSourceOffset()
+    private long getPdfSourceOffset()
     {
         return pdfSource.getOffset();
     }
@@ -548,6 +598,7 @@ public class NonSequentialPDFParser extends PDFParser
 
     /**
      * Enable handling of alternative pdfSource implementation.
+     * 
      * @throws IOException If something went wrong.
      */
     protected final void releasePdfSourceInputStream() throws IOException
@@ -556,7 +607,7 @@ public class NonSequentialPDFParser extends PDFParser
         // pdfSource.close();
     }
 
-    private final void closeFileStream() throws IOException
+    private void closeFileStream() throws IOException
     {
         if (pdfSource != null)
         {
@@ -566,12 +617,11 @@ public class NonSequentialPDFParser extends PDFParser
 
     // ------------------------------------------------------------------------
     /**
-     * Looks for and parses startxref. We first look for last '%%EOF' marker
-     * (within last {@link #DEFAULT_TRAIL_BYTECOUNT} bytes (or range set via
-     * {@link #setEOFLookupRange(int)}) and go back to find
+     * Looks for and parses startxref. We first look for last '%%EOF' marker (within last
+     * {@link #DEFAULT_TRAIL_BYTECOUNT} bytes (or range set via {@link #setEOFLookupRange(int)}) and go back to find
      * <code>startxref</code>.
      * 
-     * @return the offset of StartXref 
+     * @return the offset of StartXref
      * @throws IOException If something went wrong.
      */
     protected final long getStartxrefOffset() throws IOException
@@ -600,8 +650,9 @@ public class NonSequentialPDFParser extends PDFParser
                 // should never happen)
                 if (readBytes < 1)
                 {
-                    throw new IOException("No more bytes to read for trailing buffer, but expected: "
-                            + (trailByteCount - off));
+                    throw new IOException(
+                            "No more bytes to read for trailing buffer, but expected: "
+                                    + (trailByteCount - off));
                 }
                 off += readBytes;
             }
@@ -639,15 +690,13 @@ public class NonSequentialPDFParser extends PDFParser
 
     // ------------------------------------------------------------------------
     /**
-     * Searches last appearance of pattern within buffer. Lookup before _lastOff
-     * and goes back until 0.
+     * Searches last appearance of pattern within buffer. Lookup before _lastOff and goes back until 0.
      * 
      * @param pattern pattern to search for
      * @param buf buffer to search pattern in
      * @param endOff offset (exclusive) where lookup starts at
      * 
-     * @return start offset of pattern within buffer or <code>-1</code> if
-     *         pattern could not be found
+     * @return start offset of pattern within buffer or <code>-1</code> if pattern could not be found
      */
     protected int lastIndexOf(final char[] pattern, final byte[] buf, final int endOff)
     {
@@ -681,8 +730,7 @@ public class NonSequentialPDFParser extends PDFParser
 
     // ------------------------------------------------------------------------
     /**
-     * Reads given pattern from {@link #pdfSource}. Skipping whitespace at start
-     * and end.
+     * Reads given pattern from {@link #pdfSource}. Skipping whitespace at start and end.
      * 
      * @param pattern pattern to be skipped
      * @throws IOException if pattern could not be read
@@ -695,8 +743,9 @@ public class NonSequentialPDFParser extends PDFParser
         {
             if (pdfSource.read() != c)
             {
-                throw new IOException("Expected pattern '" + new String(pattern) + "' but missed at character '" + c
-                        + "' at offset " + pdfSource.getOffset());
+                throw new IOException("Expected pattern '" + new String(pattern)
+                        + "' but missed at character '" + c + "' at offset "
+                        + pdfSource.getOffset());
             }
         }
 
@@ -707,8 +756,7 @@ public class NonSequentialPDFParser extends PDFParser
     private COSDictionary pagesDictionary = null;
 
     /**
-     * Returns PAGES {@link COSDictionary} object or throws {@link IOException}
-     * if PAGES dictionary does not exist.
+     * Returns PAGES {@link COSDictionary} object or throws {@link IOException} if PAGES dictionary does not exist.
      */
     private COSDictionary getPagesObject() throws IOException
     {
@@ -727,7 +775,8 @@ public class NonSequentialPDFParser extends PDFParser
 
         if (!(object instanceof COSDictionary))
         {
-            throw new IOException("PAGES not a dictionary object, but: " + object.getClass().getSimpleName());
+            throw new IOException("PAGES not a dictionary object, but: "
+                    + object.getClass().getSimpleName());
         }
 
         pagesDictionary = (COSDictionary) object;
@@ -751,7 +800,7 @@ public class NonSequentialPDFParser extends PDFParser
             // this part copied from the sequential parser
             parseHeader();
             pdfSource.seek(0);
-            
+
             if (!initialParseDone)
             {
                 initialParse();
@@ -812,7 +861,8 @@ public class NonSequentialPDFParser extends PDFParser
      *
      * @return true if parser is lenient
      */
-    public boolean isLenient () {
+    public boolean isLenient()
+    {
         return isLenient;
     }
 
@@ -825,15 +875,17 @@ public class NonSequentialPDFParser extends PDFParser
      *
      * @throws IllegalArgumentException if the method is called after parsing.
      */
-    public void setLenient (boolean lenient) throws IllegalArgumentException {
-        if (initialParseDone) {
+    public void setLenient(boolean lenient) throws IllegalArgumentException
+    {
+        if (initialParseDone)
+        {
             throw new IllegalArgumentException("Cannot change leniency after parsing");
         }
         this.isLenient = lenient;
     }
+
     /**
-     * Remove the temporary file. A temporary file is created if this class is
-     * instantiated with an InputStream
+     * Remove the temporary file. A temporary file is created if this class is instantiated with an InputStream
      */
     protected void deleteTempFile()
     {
@@ -915,10 +967,9 @@ public class NonSequentialPDFParser extends PDFParser
     }
 
     /**
-     * Returns the object for a specific page. The page tree is made up of kids.
-     * The kids have COSArray with COSObjects inside of them. The COSObject can
-     * be parsed using the dynamic parsing method We want to only parse the
-     * minimum COSObjects and still return a complete page. ready to be used.
+     * Returns the object for a specific page. The page tree is made up of kids. The kids have COSArray with COSObjects
+     * inside of them. The COSObject can be parsed using the dynamic parsing method We want to only parse the minimum
+     * COSObjects and still return a complete page. ready to be used.
      * 
      * @param num the requested page number; numbering starts with 0
      * @param startKids Kids array to start with looking up page number
@@ -928,7 +979,8 @@ public class NonSequentialPDFParser extends PDFParser
      * 
      * @throws IOException
      */
-    private COSObject getPageObject(int num, COSArray startKids, int startPageCount) throws IOException
+    private COSObject getPageObject(int num, COSArray startKids, int startPageCount)
+            throws IOException
     {
         int curPageCount = startPageCount;
         Iterator<COSBase> kidsIter = startKids.iterator();
@@ -981,20 +1033,19 @@ public class NonSequentialPDFParser extends PDFParser
     }
 
     /**
-     * Creates a unique object id using object number and object generation
-     * number. (requires object number &lt; 2^31))
+     * Creates a unique object id using object number and object generation number. (requires object number &lt; 2^31))
      */
-    private final long getObjectId(final COSObject obj)
+    private long getObjectId(final COSObject obj)
     {
         return (obj.getObjectNumber().longValue() << 32) | obj.getGenerationNumber().longValue();
     }
 
     /**
-     * Adds all from newObjects to toBeParsedList if it is not an COSObject or
-     * we didn't add this COSObject already (checked via addedObjects).
+     * Adds all from newObjects to toBeParsedList if it is not an COSObject or we didn't add this COSObject already
+     * (checked via addedObjects).
      */
-    private final void addNewToList(final Queue<COSBase> toBeParsedList, final Collection<COSBase> newObjects,
-            final Set<Long> addedObjects)
+    private void addNewToList(final Queue<COSBase> toBeParsedList,
+            final Collection<COSBase> newObjects, final Set<Long> addedObjects)
     {
         for (COSBase newObject : newObjects)
         {
@@ -1011,10 +1062,10 @@ public class NonSequentialPDFParser extends PDFParser
     }
 
     /**
-     * Adds newObject to toBeParsedList if it is not an COSObject or we didn't
-     * add this COSObject already (checked via addedObjects).
+     * Adds newObject to toBeParsedList if it is not an COSObject or we didn't add this COSObject already (checked via
+     * addedObjects).
      */
-    private final void addNewToList(final Queue<COSBase> toBeParsedList, final COSBase newObject,
+    private void addNewToList(final Queue<COSBase> toBeParsedList, final COSBase newObject,
             final Set<Long> addedObjects)
     {
         if (newObject instanceof COSObject)
@@ -1029,13 +1080,11 @@ public class NonSequentialPDFParser extends PDFParser
     }
 
     /**
-     * Will parse every object necessary to load a single page from the pdf
-     * document. We try our best to order objects according to offset in file
-     * before reading to minimize seek operations.
+     * Will parse every object necessary to load a single page from the pdf document. We try our best to order objects
+     * according to offset in file before reading to minimize seek operations.
      * 
      * @param dict the COSObject from the parent pages.
-     * @param excludeObjects dictionary object reference entries with these
-     *            names will not be parsed
+     * @param excludeObjects dictionary object reference entries with these names will not be parsed
      * 
      * @throws IOException
      */
@@ -1078,7 +1127,8 @@ public class NonSequentialPDFParser extends PDFParser
                 }
                 else if (baseObj instanceof COSDictionary)
                 {
-                    addNewToList(toBeParsedList, ((COSDictionary) baseObj).getValues(), addedObjects);
+                    addNewToList(toBeParsedList, ((COSDictionary) baseObj).getValues(),
+                            addedObjects);
                 }
                 else if (baseObj instanceof COSArray)
                 {
@@ -1092,8 +1142,8 @@ public class NonSequentialPDFParser extends PDFParser
                 {
                     COSObject obj = (COSObject) baseObj;
                     long objId = getObjectId(obj);
-                    COSObjectKey objKey = new COSObjectKey(obj.getObjectNumber().intValue(), obj.getGenerationNumber()
-                            .intValue());
+                    COSObjectKey objKey = new COSObjectKey(obj.getObjectNumber().intValue(), obj
+                            .getGenerationNumber().intValue());
 
                     if (!(parsedObjects.contains(objId) /*
                                                          * || document.hasObjectInPool ( objKey )
@@ -1102,7 +1152,7 @@ public class NonSequentialPDFParser extends PDFParser
                         Long fileOffset = xrefTrailerResolver.getXrefTable().get(objKey);
                         // it is allowed that object references point to null,
                         // thus we have to test
-                        if (fileOffset != null)
+                        if (fileOffset != null && fileOffset != 0)
                         {
                             if (fileOffset > 0)
                             {
@@ -1113,16 +1163,20 @@ public class NonSequentialPDFParser extends PDFParser
                                 // negative offset means we have a compressed
                                 // object within object stream;
                                 // get offset of object stream
-                                fileOffset = xrefTrailerResolver.getXrefTable().get(new COSObjectKey(-fileOffset, 0));
+                                fileOffset = xrefTrailerResolver.getXrefTable().get(
+                                        new COSObjectKey(-fileOffset, 0));
                                 if ((fileOffset == null) || (fileOffset <= 0))
                                 {
-                                    throw new IOException("Invalid object stream xref object reference: " + fileOffset);
+                                    throw new IOException(
+                                            "Invalid object stream xref object reference for key '" + objKey + "': "
+                                                    + fileOffset);
                                 }
 
                                 List<COSObject> stmObjects = objToBeParsed.get(fileOffset);
                                 if (stmObjects == null)
                                 {
-                                    objToBeParsed.put(fileOffset, stmObjects = new ArrayList<COSObject>());
+                                    objToBeParsed.put(fileOffset,
+                                            stmObjects = new ArrayList<COSObject>());
                                 }
                                 stmObjects.add(obj);
                             }
@@ -1157,44 +1211,39 @@ public class NonSequentialPDFParser extends PDFParser
     }
 
     /**
-     * This will parse the next object from the stream and add it to the local
-     * state. This is taken from {@link PDFParser} and reduced to parsing an
-     * indirect object.
+     * This will parse the next object from the stream and add it to the local state. This is taken from
+     * {@link PDFParser} and reduced to parsing an indirect object.
      * 
-     * @param obj object to be parsed (we only take object number and generation
-     *            number for lookup start offset)
-     * @param requireExistingNotCompressedObj if <code>true</code> object to be
-     *            parsed must not be contained within compressed stream
+     * @param obj object to be parsed (we only take object number and generation number for lookup start offset)
+     * @param requireExistingNotCompressedObj if <code>true</code> object to be parsed must not be contained within
+     * compressed stream
      * @return the parsed object (which is also added to document object)
      * 
      * @throws IOException If an IO error occurs.
      */
-    protected final COSBase parseObjectDynamically(COSObject obj, boolean requireExistingNotCompressedObj)
-            throws IOException
+    protected final COSBase parseObjectDynamically(COSObject obj,
+            boolean requireExistingNotCompressedObj) throws IOException
     {
-        return parseObjectDynamically(obj.getObjectNumber().intValue(), obj.getGenerationNumber().intValue(),
-                requireExistingNotCompressedObj);
+        return parseObjectDynamically(obj.getObjectNumber().intValue(), obj.getGenerationNumber()
+                .intValue(), requireExistingNotCompressedObj);
     }
 
     /**
-     * This will parse the next object from the stream and add it to the local
-     * state. This is taken from {@link PDFParser} and reduced to parsing an
-     * indirect object.
+     * This will parse the next object from the stream and add it to the local state. This is taken from
+     * {@link PDFParser} and reduced to parsing an indirect object.
      * 
      * @param objNr object number of object to be parsed
      * @param objGenNr object generation number of object to be parsed
-     * @param requireExistingNotCompressedObj if <code>true</code> the object to
-     *            be parsed must be defined in xref (comment: null objects may
-     *            be missing from xref) and it must not be a compressed object
-     *            within object stream (this is used to circumvent being stuck
-     *            in a loop in a malicious PDF)
+     * @param requireExistingNotCompressedObj if <code>true</code> the object to be parsed must be defined in xref
+     * (comment: null objects may be missing from xref) and it must not be a compressed object within object stream
+     * (this is used to circumvent being stuck in a loop in a malicious PDF)
      * 
      * @return the parsed object (which is also added to document object)
      * 
      * @throws IOException If an IO error occurs.
      */
-    protected COSBase parseObjectDynamically(int objNr, int objGenNr, boolean requireExistingNotCompressedObj)
-            throws IOException
+    protected COSBase parseObjectDynamically(int objNr, int objGenNr,
+            boolean requireExistingNotCompressedObj) throws IOException
     {
         // ---- create object key and get object (container) from pool
         final COSObjectKey objKey = new COSObjectKey(objNr, objGenNr);
@@ -1207,10 +1256,11 @@ public class NonSequentialPDFParser extends PDFParser
             Long offsetOrObjstmObNr = xrefTrailerResolver.getXrefTable().get(objKey);
 
             // sanity test to circumvent loops with broken documents
-            if (requireExistingNotCompressedObj && ((offsetOrObjstmObNr == null) || (offsetOrObjstmObNr <= 0)))
+            if (requireExistingNotCompressedObj
+                    && ((offsetOrObjstmObNr == null) || (offsetOrObjstmObNr <= 0)))
             {
-                throw new IOException("Object must be defined and must not be compressed object: " + objKey.getNumber()
-                        + ":" + objKey.getGeneration());
+                throw new IOException("Object must be defined and must not be compressed object: "
+                        + objKey.getNumber() + ":" + objKey.getGeneration());
             }
 
             if (offsetOrObjstmObNr == null)
@@ -1232,8 +1282,9 @@ public class NonSequentialPDFParser extends PDFParser
                 // ---- consistency check
                 if ((readObjNr != objKey.getNumber()) || (readObjGen != objKey.getGeneration()))
                 {
-                    throw new IOException("XREF for " + objKey.getNumber() + ":" + objKey.getGeneration()
-                            + " points to wrong object: " + readObjNr + ":" + readObjGen);
+                    throw new IOException("XREF for " + objKey.getNumber() + ":"
+                            + objKey.getGeneration() + " points to wrong object: " + readObjNr
+                            + ":" + readObjGen);
                 }
 
                 skipSpaces();
@@ -1246,7 +1297,7 @@ public class NonSequentialPDFParser extends PDFParser
                     pdfSource.unread(' ');
                     if (pb instanceof COSDictionary)
                     {
-                        COSStream stream = parseCOSStream((COSDictionary) pb, getDocument().getScratchFile());
+                        COSStream stream = parseCOSStream((COSDictionary) pb);
 
                         if (securityHandler != null)
                         {
@@ -1259,7 +1310,8 @@ public class NonSequentialPDFParser extends PDFParser
                         // this is not legal
                         // the combination of a dict and the stream/endstream
                         // forms a complete stream object
-                        throw new IOException("Stream not preceded by dictionary (offset: " + offsetOrObjstmObNr + ").");
+                        throw new IOException("Stream not preceded by dictionary (offset: "
+                                + offsetOrObjstmObNr + ").");
                     }
                     skipSpaces();
                     endObjectKey = readLine();
@@ -1296,6 +1348,10 @@ public class NonSequentialPDFParser extends PDFParser
                             {
                                 decrypt((COSString) entry.getValue(), objNr, objGenNr);
                             }
+                            else if (entry.getValue() instanceof COSArray)
+                            {
+                                securityHandler.decryptArray((COSArray) entry.getValue(), objNr, objGenNr);
+                            }                            
                         }
                     }
                     else if (pb instanceof COSArray)
@@ -1315,15 +1371,17 @@ public class NonSequentialPDFParser extends PDFParser
 
                 if (!endObjectKey.startsWith("endobj"))
                 {
-                    if (endObjectKey.endsWith(" obj") && isLenient)
+                    if (isLenient)
                     {
                         LOG.warn("Object (" + readObjNr + ":" + readObjGen + ") at offset "
-                                + offsetOrObjstmObNr + " does not end with 'endobj' but with '" + endObjectKey + "'");
+                                + offsetOrObjstmObNr + " does not end with 'endobj' but with '"
+                                + endObjectKey + "'");
                     }
                     else
                     {
-                        throw new IOException("Object (" + readObjNr + ":" + readObjGen + ") at offset "
-                                + offsetOrObjstmObNr + " does not end with 'endobj' but with '" + endObjectKey + "'");
+                        throw new IOException("Object (" + readObjNr + ":" + readObjGen
+                                + ") at offset " + offsetOrObjstmObNr
+                                + " does not end with 'endobj' but with '" + endObjectKey + "'");
                     }
                 }
 
@@ -1341,13 +1399,14 @@ public class NonSequentialPDFParser extends PDFParser
                 if (objstmBaseObj instanceof COSStream)
                 {
                     // parse object stream
-                    PDFObjectStreamParser parser = new PDFObjectStreamParser((COSStream) objstmBaseObj, document,
-                            forceParsing);
+                    PDFObjectStreamParser parser = new PDFObjectStreamParser(
+                            (COSStream) objstmBaseObj, document, forceParsing);
                     parser.parse();
 
                     // get set of object numbers referenced for this object
                     // stream
-                    final Set<Long> refObjNrs = xrefTrailerResolver.getContainedObjectNumbers(objstmObjNr);
+                    final Set<Long> refObjNrs = xrefTrailerResolver
+                            .getContainedObjectNumbers(objstmObjNr);
 
                     // register all objects which are referenced to be contained
                     // in object stream
@@ -1433,8 +1492,8 @@ public class NonSequentialPDFParser extends PDFParser
 
                 if (!(lengthObj.getObject() instanceof COSNumber))
                 {
-                    throw new IOException("Wrong type of referenced length object " + lengthObj + ": "
-                            + lengthObj.getObject().getClass().getSimpleName());
+                    throw new IOException("Wrong type of referenced length object " + lengthObj
+                            + ": " + lengthObj.getObject().getClass().getSimpleName());
                 }
 
                 retVal = (COSNumber) lengthObj.getObject();
@@ -1442,7 +1501,8 @@ public class NonSequentialPDFParser extends PDFParser
             }
             else
             {
-                throw new IOException("Wrong type of length object: " + lengthBaseObj.getClass().getSimpleName());
+                throw new IOException("Wrong type of length object: "
+                        + lengthBaseObj.getClass().getSimpleName());
             }
         }
         finally
@@ -1457,26 +1517,22 @@ public class NonSequentialPDFParser extends PDFParser
     private final byte[] streamCopyBuf = new byte[streamCopyBufLen];
 
     /**
-     * This will read a COSStream from the input stream using length attribute
-     * within dictionary. If length attribute is a indirect reference it is
-     * first resolved to get the stream length. This means we copy stream data
-     * without testing for 'endstream' or 'endobj' and thus it is no problem if
-     * these keywords occur within stream. We require 'endstream' to be found
-     * after stream data is read.
+     * This will read a COSStream from the input stream using length attribute within dictionary. If length attribute is
+     * a indirect reference it is first resolved to get the stream length. This means we copy stream data without
+     * testing for 'endstream' or 'endobj' and thus it is no problem if these keywords occur within stream. We require
+     * 'endstream' to be found after stream data is read.
      * 
      * @param dic dictionary that goes with this stream.
-     * @param file file to write the stream to when reading.
      * 
      * @return parsed pdf stream.
      * 
-     * @throws IOException if an error occurred reading the stream, like
-     *             problems with reading length attribute, stream does not end
-     *             with 'endstream' after data read, stream too short etc.
+     * @throws IOException if an error occurred reading the stream, like problems with reading length attribute, stream
+     * does not end with 'endstream' after data read, stream too short etc.
      */
     @Override
-    protected COSStream parseCOSStream(COSDictionary dic, RandomAccess file) throws IOException
+    protected COSStream parseCOSStream(COSDictionary dic) throws IOException
     {
-        final COSStream stream = new COSStream(dic, file);
+        final COSStream stream = createCOSStream(dic);
         OutputStream out = null;
         try
         {
@@ -1487,34 +1543,31 @@ public class NonSequentialPDFParser extends PDFParser
             // PDF Ref 1.7, chap. 3.2.7:
             // 'stream' should be followed by either a CRLF (0x0d 0x0a) or LF
             // but nothing else.
+            int whitespace = pdfSource.read();
+            
+            // see brother_scan_cover.pdf, it adds whitespaces
+            // after the stream but before the start of the
+            // data, so just read those first
+            while (whitespace == 0x20)
             {
-                int whitespace = pdfSource.read();
+            	whitespace = pdfSource.read();
+            }
 
-                // see brother_scan_cover.pdf, it adds whitespaces
-                // after the stream but before the start of the
-                // data, so just read those first
-                while (whitespace == 0x20)
-                {
-                    whitespace = pdfSource.read();
-                }
-
-                if (whitespace == 0x0D)
-                {
-                    whitespace = pdfSource.read();
-                    if (whitespace != 0x0A)
-                    {
-                        // the spec says this is invalid but it happens in the
-                        // real
-                        // world so we must support it
-                        pdfSource.unread(whitespace);
-                    }
-                }
-                else if (whitespace != 0x0A)
-                {
-                    // no whitespace after 'stream'; PDF ref. says 'should' so
-                    // that is ok
-                    pdfSource.unread(whitespace);
-                }
+            if (whitespace == 0x0D)
+            {
+            	whitespace = pdfSource.read();
+            	if (whitespace != 0x0A)
+            	{
+            		// the spec says this is invalid but it happens in the
+            		// real world so we must support it
+            		pdfSource.unread(whitespace);
+            	}
+            }
+            else if (whitespace != 0x0A)
+            {
+            	// no whitespace after 'stream'; PDF ref. says 'should' so
+            	// that is ok
+            	pdfSource.unread(whitespace);
             }
 
             /*
@@ -1531,23 +1584,25 @@ public class NonSequentialPDFParser extends PDFParser
             if (validateStreamLength(streamLengthObj.longValue()))
             {
                 out = stream.createFilteredStream(streamLengthObj);
-	            long remainBytes = streamLengthObj.longValue();
-	            int bytesRead = 0;
-	            while (remainBytes > 0)
-	            {
-	                final int readBytes = pdfSource.read(streamCopyBuf, 0,
-	                        (remainBytes > streamCopyBufLen) ? streamCopyBufLen : (int) remainBytes);
-	                if (readBytes <= 0)
-	                {
-	                    useReadUntilEnd = true;
-	                    out.close();
-	                    pdfSource.unread(bytesRead);
-	                    break;
-	                }
-	                out.write(streamCopyBuf, 0, readBytes);
-	                remainBytes -= readBytes;
-	                bytesRead += readBytes;
-	            }
+                long remainBytes = streamLengthObj.longValue();
+                int bytesRead = 0;
+                while (remainBytes > 0)
+                {
+                    final int readBytes = pdfSource
+                            .read(streamCopyBuf,
+                                    0,
+                                    (remainBytes > streamCopyBufLen) ? streamCopyBufLen : (int) remainBytes);
+                    if (readBytes <= 0)
+                    {
+                        useReadUntilEnd = true;
+                        out.close();
+                        pdfSource.unread(bytesRead);
+                        break;
+                    }
+                    out.write(streamCopyBuf, 0, readBytes);
+                    remainBytes -= readBytes;
+                    bytesRead += readBytes;
+                }
             }
             else
             {
@@ -1555,13 +1610,28 @@ public class NonSequentialPDFParser extends PDFParser
             }
             if (useReadUntilEnd)
             {
-                out = stream.createFilteredStream(streamLengthObj);
+                out = stream.createFilteredStream();
                 readUntilEndStream(new EndstreamOutputStream(out));
             }
             String endStream = readString();
-            if (!endStream.equals("endstream"))
+            if (endStream.equals("endobj") && isLenient)
             {
-                throw new IOException("Error reading stream using length value. Expected='endstream' actual='"
+                LOG.warn("stream ends with 'endobj' instead of 'endstream' at offset "
+                        + pdfSource.getOffset());
+                // avoid follow-up warning about missing endobj
+                pdfSource.unread("endobj".getBytes("ISO-8859-1"));
+            }
+            else if (endStream.length() > 9 && isLenient && endStream.substring(0,9).equals("endstream"))
+            {
+                LOG.warn("stream ends with '" + endStream + "' instead of 'endstream' at offset "
+                        + pdfSource.getOffset());
+                // unread the "extra" bytes
+                pdfSource.unread(endStream.substring(9).getBytes("ISO-8859-1"));
+            }
+            else if (!endStream.equals("endstream"))
+            {
+                throw new IOException(
+                        "Error reading stream, expected='endstream' actual='"
                         + endStream + "' at offset " + pdfSource.getOffset());
             }
         }
@@ -1577,168 +1647,71 @@ public class NonSequentialPDFParser extends PDFParser
 
     private boolean validateStreamLength(long streamLength) throws IOException
     {
-    	boolean streamLengthIsValid = true;
-    	long originOffset = pdfSource.getOffset();
-    	long expectedEndOfStream = originOffset + streamLength;
-    	if (expectedEndOfStream > fileLen)
-    	{
-    		streamLengthIsValid = false;
-    		LOG.error("The end of the stream is out of range, using workaround to read the stream");
-    	}
-    	else
-    	{
-			pdfSource.seek(expectedEndOfStream);
-			skipSpaces();
-	    	if (!checkBytesAtOffset("endstream".getBytes("ISO-8859-1")))
-	    	{
-	    		streamLengthIsValid = false;
-	    		LOG.error("The end of the stream doesn't point to the correct offset, using workaround to read the stream");
-	    	}
-    		pdfSource.seek(originOffset);
-    	}
-    	return streamLengthIsValid;
-    }
-
-    private void readUntilEndStream(final OutputStream out) throws IOException
-    {
-        int bufSize;
-        int charMatchCount = 0;
-        byte[] keyw = ENDSTREAM;
-
-        final int quickTestOffset = 5; // last character position of shortest
-                                       // keyword ('endobj')
-
-        // read next chunk into buffer; already matched chars are added to
-        // beginning of buffer
-        while ((bufSize = pdfSource.read(streamCopyBuf, charMatchCount, streamCopyBufLen - charMatchCount)) > 0)
+        boolean streamLengthIsValid = true;
+        long originOffset = pdfSource.getOffset();
+        long expectedEndOfStream = originOffset + streamLength;
+        if (expectedEndOfStream > fileLen)
         {
-            // number of already matching chars
-            int startingMatchCount = charMatchCount;
-            int bIdx = charMatchCount;
-            int quickTestIdx;
-
-            // iterate over buffer, trying to find keyword match
-            for (int maxQuicktestIdx = bufSize - quickTestOffset; bIdx < bufSize; bIdx++)
+            streamLengthIsValid = false;
+            LOG.error("The end of the stream is out of range, using workaround to read the stream");
+            LOG.error("Stream start offset: " + originOffset);
+            LOG.error("Expected endofstream offset: " + expectedEndOfStream);
+        }
+        else
+        {
+            pdfSource.seek(expectedEndOfStream);
+            skipSpaces();
+            if (!checkBytesAtOffset("endstream".getBytes("ISO-8859-1")))
             {
-                // reduce compare operations by first test last character we
-                // would have to
-                // match if current one matches; if it is not a character from
-                // keywords
-                // we can move behind the test character;
-                // this shortcut is inspired by Boyer-Moore string search
-                // algorithm
-                // and can reduce parsing time by approx. 20%
-                if ((charMatchCount == 0) && ((quickTestIdx = bIdx + quickTestOffset) < maxQuicktestIdx))
-                {
-
-                    final byte ch = streamCopyBuf[quickTestIdx];
-                    if ((ch > 't') || (ch < 'a'))
-                    {
-                        // last character we would have to match if current
-                        // character would match
-                        // is not a character from keywords -> jump behind and
-                        // start over
-                        bIdx = quickTestIdx;
-                        continue;
-                    }
-                }
-
-                final byte ch = streamCopyBuf[bIdx]; // could be negative - but
-                                                     // we only compare to ASCII
-                if (ch == keyw[charMatchCount])
-                {
-                    if (++charMatchCount == keyw.length)
-                    {
-                        // match found
-                        bIdx++;
-                        break;
-                    }
-                }
-                else
-                {
-                    if ((charMatchCount == 3) && (ch == ENDOBJ[charMatchCount]))
-                    {
-                        // maybe ENDSTREAM is missing but we could have ENDOBJ
-                        keyw = ENDOBJ;
-                        charMatchCount++;
-                    }
-                    else
-                    {
-                        // no match; incrementing match start by 1 would be dumb
-                        // since we already know matched chars
-                        // depending on current char read we may already have
-                        // beginning of a new match:
-                        // 'e': first char matched;
-                        // 'n': if we are at match position idx 7 we already
-                        // read 'e' thus 2 chars matched
-                        // for each other char we have to start matching first
-                        // keyword char beginning with next
-                        // read position
-                        charMatchCount = (ch == E) ? 1 : ((ch == N) && (charMatchCount == 7)) ? 2 : 0;
-                        // search again for 'endstream'
-                        keyw = ENDSTREAM;
-                    }
-                }
-            } // for
-
-            int contentBytes = Math.max(0, bIdx - charMatchCount);
-
-            // write buffer content until first matched char to output stream
-            if (contentBytes > 0)
-            {
-                out.write(streamCopyBuf, 0, contentBytes);
+                streamLengthIsValid = false;
+                LOG.error("The end of the stream doesn't point to the correct offset, using workaround to read the stream");
+                LOG.error("Stream start offset: " + originOffset);
+                LOG.error("Expected endofstream offset: " + expectedEndOfStream);
             }
-            if (charMatchCount == keyw.length)
-            {
-                // keyword matched; 
-            	// unread matched keyword (endstream/endobj) and following buffered content
-           	pdfSource.unread(streamCopyBuf, contentBytes, bufSize - contentBytes - keyw.length + startingMatchCount);
-                break;
-            }
-            else
-            {
-                // copy matched chars at start of buffer
-                System.arraycopy(keyw, 0, streamCopyBuf, 0, charMatchCount);
-            }
-        } // while
-        
-        out.flush(); // this writes a lonely CR or drops trailing CR LF and LF
+            pdfSource.seek(originOffset);
+        }
+        return streamLengthIsValid;
     }
-    
+
     /**
+     * Check if the cross reference table/stream can be found at the current offset.
      * 
      * @param startXRefOffset
-     * @return the calculated offset
+     * @return the revised offset
      * @throws IOException
      */
-    private long calculateFixingOffset(long startXRefOffset) throws IOException
+    private long checkXRefOffset(long startXRefOffset) throws IOException
     {
-    	// TODO check offset for XRef stream objects
-    	setPdfSource(startXRefOffset);
-    	if (pdfSource.peek() == X && calculateFixingOffset(startXRefOffset, XREF) == 0)
-    	{
-    		return 0;
-    	}
-    	long fixingOffset = calculateFixingOffset(startXRefOffset, XREF);
-   		return fixingOffset;
+        setPdfSource(startXRefOffset);
+        if (pdfSource.peek() == X && checkBytesAtOffset(XREF_TABLE))
+        {
+            return startXRefOffset;
+        }
+        int nextValue = pdfSource.peek();
+        // maybe there isn't a xref table but a xref stream
+        // is the next character a digit?
+        if (nextValue > 47 && nextValue < 57)
+        {
+            try
+            {
+                // Maybe it's a XRef stream
+                readObjectNumber();
+                readGenerationNumber();
+                readPattern(OBJ_MARKER);
+                setPdfSource(startXRefOffset);
+                return startXRefOffset;
+            }
+            catch (IOException exception)
+            {
+            	// there wasn't an object of a xref stream
+            	// try to repair the offset
+                pdfSource.seek(startXRefOffset);
+            }
+        }
+        // try to find a fixed offset
+        return calculateXRefFixedOffset(startXRefOffset);
     }
 
-    /**
-     * Try to dereference the given object at the given offset and calculate a new
-     * offset if necessary.
-     * 
-     * @param objectOffset the offset where to look at
-     * @param objectID the object ID
-     * @param genID the generation number
-     * @return the difference to the origin offset
-     * @throws IOException if something went wrong
-     */
-    private long calculateFixingOffset(long objectOffset, long objectID, long genID) throws IOException
-    {
-    	String objString = Long.toString(objectID) + " " + Long.toString(genID)+ " obj";
-    	return calculateFixingOffset(objectOffset, objString.getBytes("ISO-8859-1"));
-    }
-    
     /**
      * Check if the given bytes can be found at the current offset.
      * 
@@ -1748,140 +1721,350 @@ public class NonSequentialPDFParser extends PDFParser
      */
     private boolean checkBytesAtOffset(byte[] string) throws IOException
     {
-    	boolean bytesMatching = false;
-		if (pdfSource.peek() == string[0])
-		{
-	    	int length = string.length;
-	    	byte[] bytesRead = new byte[length];
-			int numberOfBytes = pdfSource.read(bytesRead, 0, length);
-			while (numberOfBytes < length)
-			{
-				int readMore =  pdfSource.read(bytesRead, numberOfBytes, length-numberOfBytes);
-				if (readMore < 0)
-				{
-					break;
-				}
-				numberOfBytes += readMore;
-			}
-			if (Arrays.equals(string, bytesRead))
-			{
-				bytesMatching = true;
-			}
-			pdfSource.unread(bytesRead, 0, numberOfBytes);
-		}
-		return bytesMatching;
-    }
-    
-    /**
-     * Check if the given bytes can be found at the given offset.
-     * The method seeks 200 bytes backward/forward if the given string
-     * can't be found at the given offset and returns the difference 
-     * of the new offset to the origin one.
-     * 
-     * @param objectOffset the given offset where to look at
-     * @param string the bytes to look for
-     * @return the difference to the origin one
-     * @throws IOException if something went wrong
-     */
-    private long calculateFixingOffset(long objectOffset, byte[] string) throws IOException
-    {
-    	if (objectOffset < 0)
-    	{
-    		LOG.error("Invalid object offset " + objectOffset + " for object " + new String(string));
-    		return 0;
-    	}
-    	long originOffset = pdfSource.getOffset();
-    	pdfSource.seek(objectOffset);
-    	// most likely the object can be found at the given offset
-    	if (checkBytesAtOffset(string))
-    	{
-        	pdfSource.seek(originOffset);
-			return 0;
-		}
-    	// the offset seems to be wrong -> seek backward to find the object we are looking for
-    	long currentOffset = objectOffset;
-    	for (int i=1; i<20;i++)
-    	{
-    		currentOffset = objectOffset - (i*10);
-    		if (currentOffset > 0)
-    		{
-	    		pdfSource.seek(currentOffset);
-	    		for (int j=0; j<10;j++)
-	    		{
-	    			if (checkBytesAtOffset(string))
-	    			{
-	    				pdfSource.seek(originOffset);
-						LOG.debug("Fixed reference for object "+new String(string)+" "+objectOffset + " -> "+(objectOffset - currentOffset));
-	    				return objectOffset - currentOffset;
-	    			}
-	    			else
-	    			{
-	    				currentOffset++;
-	    				pdfSource.read();
-	    			}
-	    		}
-    		}
-    	}
-    	// no luck by seeking backward -> seek forward to find the object we are looking for
-		pdfSource.seek(objectOffset);
-		currentOffset = objectOffset;
-		do
-		{
-			if (checkBytesAtOffset(string))
-			{
-				pdfSource.seek(originOffset);
-				if (currentOffset != 0)
-				{
-					LOG.debug("Fixed reference for object "+new String(string)+" "+objectOffset + " -> "+(objectOffset - currentOffset));
-				}
-				return objectOffset - currentOffset;
-			}
-			else
-			{
-				// next byte
-				currentOffset++;
-				if (pdfSource.read() == -1)
-				{
-					throw new IOException("Premature end of file while dereferencing object "+ new String(string) + " at offset " + objectOffset);
-				}
-			}
-		}
-		while(currentOffset < objectOffset+200);
-		pdfSource.seek(originOffset);
-		LOG.error("Can't find the object " + new String(string) + " at offset " + objectOffset);
-    	return 0;
+        boolean bytesMatching = false;
+        if (pdfSource.peek() == string[0])
+        {
+            int length = string.length;
+            byte[] bytesRead = new byte[length];
+            int numberOfBytes = pdfSource.read(bytesRead, 0, length);
+            while (numberOfBytes < length)
+            {
+                int readMore = pdfSource.read(bytesRead, numberOfBytes, length - numberOfBytes);
+                if (readMore < 0)
+                {
+                    break;
+                }
+                numberOfBytes += readMore;
+            }
+            if (Arrays.equals(string, bytesRead))
+            {
+                bytesMatching = true;
+            }
+            pdfSource.unread(bytesRead, 0, numberOfBytes);
+        }
+        return bytesMatching;
     }
 
     /**
-     * Check the XRef table by dereferencing all objects and fixing 
-     * the offset if necessary.
+     * Try to find a fixed offset for the given xref table/stream.
+     * 
+     * @param objectOffset the given offset where to look at
+     * @return the fixed offset
+     * 
+     * @throws IOException if something went wrong
+     */
+    private long calculateXRefFixedOffset(long objectOffset) throws IOException
+    {
+        if (objectOffset < 0)
+        {
+            LOG.error("Invalid object offset " + objectOffset + " when searching for a xref table/stream");
+            return 0;
+        }
+        // start a brute force search for all xref tables and try to find the offset we are looking for
+        long newOffset = bfSearchForXRef(objectOffset);
+        if (newOffset > -1)
+        {
+            LOG.debug("Fixed reference for xref table/stream " + objectOffset + " -> " + newOffset);
+            return newOffset;
+        }
+        LOG.error("Can't find the object axref table/stream at offset " + objectOffset);
+        return 0;
+    }
+
+    /**
+     * Check the XRef table by dereferencing all objects and fixing the offset if necessary.
      * 
      * @throws IOException if something went wrong.
      */
     private void checkXrefOffsets() throws IOException
     {
-    	Map<COSObjectKey, Long>xrefOffset = xrefTrailerResolver.getXrefTable();
-    	if (xrefOffset != null)
-    	{
-    		for (COSObjectKey objectKey : xrefOffset.keySet())
-    		{
-    			Long objectOffset = xrefOffset.get(objectKey);
-    			// a negative offset number represents a object number itself
-    			// see type 2 entry in xref stream
-    			if (objectOffset != null && objectOffset > 0)
-    			{
-        			long objectNr = objectKey.getNumber();
-        			long objectGen = objectKey.getGeneration();
-    				long fixingOffset = calculateFixingOffset(objectOffset, objectNr, objectGen);
-    				if (fixingOffset != 0)
-    				{
-    					long newOffset = objectOffset - fixingOffset;
-    					xrefOffset.put(objectKey, newOffset);
-    					LOG.debug("Fixed reference for object "+objectNr+" "+objectGen+" "+objectOffset + " -> "+newOffset);
-    				}
-    			}
-    		}
-    	}
+        Map<COSObjectKey, Long> xrefOffset = xrefTrailerResolver.getXrefTable();
+        if (xrefOffset != null)
+        {
+            for (COSObjectKey objectKey : xrefOffset.keySet())
+            {
+                Long objectOffset = xrefOffset.get(objectKey);
+                // a negative offset number represents a object number itself
+                // see type 2 entry in xref stream
+                if (objectOffset != null && objectOffset > 0)
+                {
+                    long objectNr = objectKey.getNumber();
+                    long objectGen = objectKey.getGeneration();
+                    String objectString = createObjectString(objectNr, objectGen);
+                    if (!checkObjectId(objectString, objectOffset))
+                    {
+                        long newOffset = bfSearchForObject(objectString);
+                        if (newOffset > -1)
+                        {
+                            xrefOffset.put(objectKey, newOffset);
+                            LOG.debug("Fixed reference for object " + objectNr + " " + objectGen
+                                    + " " + objectOffset + " -> " + newOffset);
+                        }
+                        else
+                        {
+                            LOG.error("Can't find the object " + objectNr + " " + objectGen
+                                    + " (origin offset " + objectOffset + ")");
+                        }
+                    }
+                }
+            }
+        }
     }
 
+    /**
+     * Check if the given string can be found at the given offset.
+     * 
+     * @param objectString the string we are looking for
+     * @param offset the given where to look
+     * @return returns true if the given string can be found at the givwen offset
+     * @throws IOException if something went wrong
+     */
+    private boolean checkObjectId(String objectString, long offset) throws IOException
+    {
+        boolean objectFound = false;
+        long originOffset = pdfSource.getOffset();
+        pdfSource.seek(offset);
+        objectFound = checkBytesAtOffset(objectString.getBytes("ISO-8859-1"));
+        pdfSource.seek(originOffset);
+        return objectFound;
+    }
+
+    /**
+     * Create a string for the given object id.
+     * 
+     * @param objectID the object id
+     * @param genID the generation id
+     * @return the generated string
+     */
+    private String createObjectString(long objectID, long genID)
+    {
+        return Long.toString(objectID) + " " + Long.toString(genID) + " obj";
+    }
+
+    /**
+     * Search for the offset of the given object among the objects found by a brute force search.
+     * 
+     * @param objectString the object we are looking for
+     * @return the offset of the object
+     * @throws IOException if something went wrong
+     */
+    private long bfSearchForObject(String objectString) throws IOException
+    {
+        long newOffset = -1;
+        bfSearchForObjects();
+        if (bfSearchObjectOffsets.containsKey(objectString))
+        {
+            newOffset = bfSearchObjectOffsets.get(objectString);
+        }
+        return newOffset;
+    }
+
+    /**
+     * Brute force search for every object in the pdf.
+     *   
+     * @throws IOException if something went wrong
+     */
+    private void bfSearchForObjects() throws IOException
+    {
+        if (bfSearchObjectOffsets == null)
+        {
+            bfSearchObjectOffsets = new HashMap<String, Long>();
+            long originOffset = pdfSource.getOffset();
+            long currentOffset = MINIMUM_SEARCH_OFFSET;
+            String objString = " obj";
+            byte[] string = objString.getBytes("ISO-8859-1");
+            do
+            {
+                pdfSource.seek(currentOffset);
+                if (checkBytesAtOffset(string))
+                {
+                    long tempOffset = currentOffset - 1;
+                    pdfSource.seek(tempOffset);
+                    int genID = pdfSource.peek();
+                    // is the next char a digit?
+                    if (genID > 47 && genID < 58)
+                    {
+                        genID -= 48;
+                        tempOffset--;
+                        pdfSource.seek(tempOffset);
+                        if (pdfSource.peek() == 32)
+                        {
+                            while (tempOffset > MINIMUM_SEARCH_OFFSET && pdfSource.peek() == 32)
+                            {
+                                pdfSource.seek(--tempOffset);
+                            }
+                            int length = 0;
+                            while (tempOffset > MINIMUM_SEARCH_OFFSET && pdfSource.peek() > 47
+                                    && pdfSource.peek() < 58)
+                            {
+                                pdfSource.seek(--tempOffset);
+                                length++;
+                            }
+                            if (length > 0)
+                            {
+                                pdfSource.read();
+                                byte[] objIDBytes = pdfSource.readFully(length);
+                                String objIdString = new String(objIDBytes, 0,
+                                        objIDBytes.length, "ISO-8859-1");
+                                Long objectID = null;
+                                try
+                                {
+                                    objectID = Long.valueOf(objIdString);
+                                }
+                                catch (NumberFormatException excpetion)
+                                {
+                                    objectID = null;
+                                }
+                                if (objectID != null)
+                                {
+                                    bfSearchObjectOffsets.put(
+                                            createObjectString(objectID, genID), ++tempOffset);
+                                }
+                            }
+                        }
+                    }
+                }
+                currentOffset++;
+            } while (!pdfSource.isEOF());
+            // reestablish origin position
+            pdfSource.seek(originOffset);
+        }
+    }
+
+    /**
+     * Search for the offset of the given xref table/stream among those found by a brute force search.
+     * 
+     * @return the offset of the xref entry
+     * @throws IOException if something went wrong
+     */
+    private long bfSearchForXRef(long xrefOffset) throws IOException
+    {
+    	long newOffset = -1;
+    	bfSearchForXRefs();
+    	if (bfSearchXRefOffsets != null)
+    	{
+	    	long currentDifference = -1;
+	    	int currentOffsetIndex = -1;
+	    	int numberOfOffsets = bfSearchXRefOffsets.size();
+	    	// find the most likely value
+	    	// TODO to be optimized, this won't work in every case
+	    	for (int i=0; i<numberOfOffsets; i++)
+	    	{
+	    		long newDifference = xrefOffset - bfSearchXRefOffsets.get(i);
+	    		// find the nearest offset
+	    		if (currentDifference == -1 || (Math.abs(currentDifference) > Math.abs(newDifference)))
+	    		{
+	    			currentDifference = newDifference;
+	        		currentOffsetIndex = i;
+	    		}
+	    	}
+	    	if (currentOffsetIndex > -1)
+	    	{
+	    		newOffset = bfSearchXRefOffsets.remove(currentOffsetIndex);
+	    	}
+    	}
+        return newOffset;
+    }
+
+    /**
+     * Brute force search for all xref entries.
+     * 
+     * @throws IOException if something went wrong
+     */
+    private void bfSearchForXRefs() throws IOException
+    {
+    	if (bfSearchXRefOffsets == null)
+    	{
+            // a pdf may contain more than one xref entry
+    		bfSearchXRefOffsets = new Vector<Long>();
+    		long originOffset = pdfSource.getOffset();
+	        pdfSource.seek(MINIMUM_SEARCH_OFFSET);
+	        // search for xref tables
+	        while(!pdfSource.isEOF())
+	        {
+	            if (checkBytesAtOffset(XREF_TABLE))
+	            {
+	                long newOffset = pdfSource.getOffset(); 
+	                pdfSource.seek(newOffset-1);
+	                // ensure that we don't read "startxref" instead of "xref"
+	                if (isWhitespace())
+	                {
+	                    bfSearchXRefOffsets.add(newOffset);
+	                }
+	                pdfSource.seek(newOffset+4);
+	            }
+	            pdfSource.read();
+	        }
+	        pdfSource.seek(MINIMUM_SEARCH_OFFSET);
+	        // search for XRef streams
+            String objString = " obj";
+            byte[] string = objString.getBytes("ISO-8859-1");
+	        while(!pdfSource.isEOF())
+	        {
+	            if (checkBytesAtOffset(XREF_STREAM))
+	            {
+	            	// search backwards for the beginning of the stream
+	                long newOffset = -1;
+	            	long xrefOffset = pdfSource.getOffset();
+	            	long currentOffset = xrefOffset;
+	            	boolean objFound = false;
+	            	for (int i=1; i<30 && !objFound;i++)
+	            	{
+	            		currentOffset = xrefOffset - (i*10);
+	            		if (currentOffset > 0)
+	            		{
+	        	    		pdfSource.seek(currentOffset);
+	        	    		for (int j=0; j<10;j++)
+	        	    		{
+	        	    			if (checkBytesAtOffset(string))
+	        	    			{
+	        	                    long tempOffset = currentOffset - 1;
+	        	                    pdfSource.seek(tempOffset);
+	        	                    int genID = pdfSource.peek();
+	        	                    // is the next char a digit?
+	        	                    if (genID > 47 && genID < 58)
+	        	                    {
+	        	                        genID -= 48;
+	        	                        tempOffset--;
+	        	                        pdfSource.seek(tempOffset);
+	        	                        if (pdfSource.peek() == 32)
+	        	                        {
+	        	                            int length = 0;
+	        	                            pdfSource.seek(--tempOffset);
+	        	                            while (tempOffset > MINIMUM_SEARCH_OFFSET && pdfSource.peek() > 47
+	        	                                    && pdfSource.peek() < 58)
+	        	                            {
+	        	                                pdfSource.seek(--tempOffset);
+	        	                                length++;
+	        	                            }
+	        	                            if (length > 0)
+	        	                            {
+	        	                                pdfSource.read();
+	        	        		            	newOffset = pdfSource.getOffset();
+	        	                            }
+	        	                        }
+	        	                    }
+	        						LOG.debug("Fixed reference for xref stream "+xrefOffset + " -> "+newOffset);
+	        		            	objFound = true;
+	        		            	break;
+	        	    			}
+	        	    			else
+	        	    			{
+	        	    				currentOffset++;
+	        	    				pdfSource.read();
+	        	    			}
+	        	    		}
+	            		}
+	            	}
+	            	if (newOffset > -1)
+	            	{
+		                bfSearchXRefOffsets.add(newOffset);
+	            	}
+    				pdfSource.seek(xrefOffset+5);
+	            }
+	            pdfSource.read();
+	        }
+	        pdfSource.seek(originOffset);
+    	}
+    }
 }

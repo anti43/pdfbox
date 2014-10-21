@@ -17,9 +17,6 @@
 package org.apache.pdfbox.rendering;
 
 import java.awt.BasicStroke;
-import java.awt.Color;
-import java.awt.Composite;
-import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Paint;
@@ -27,12 +24,11 @@ import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Shape;
 import java.awt.TexturePaint;
-import java.awt.font.FontRenderContext;
-import java.awt.font.GlyphVector;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Area;
 import java.awt.geom.GeneralPath;
 import java.awt.geom.NoninvertibleTransformException;
+import java.awt.geom.PathIterator;
 import java.awt.geom.Point2D;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
@@ -45,33 +41,30 @@ import java.util.Map;
 import com.mortennobel.imagescaling.ResampleFilters;
 import com.mortennobel.imagescaling.ResampleOp;
 import com.mortennobel.imagescaling.AdvancedResizeOp;
+
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Image;
 import java.awt.font.FontRenderContext;
 import java.awt.font.GlyphVector;
 
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.fontbox.cff.CFFFont;
-import org.apache.fontbox.ttf.TrueTypeFont;
-import org.apache.fontbox.type1.Type1Font;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSStream;
+import org.apache.pdfbox.pdmodel.font.PDCIDFontType0;
+import org.apache.pdfbox.pdmodel.font.PDCIDFontType2;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImage;
+import org.apache.pdfbox.pdmodel.graphics.state.RenderingMode;
+import org.apache.pdfbox.rendering.font.CIDType0Glyph2D;
 import org.apache.pdfbox.rendering.font.Glyph2D;
 import org.apache.pdfbox.rendering.font.TTFGlyph2D;
 import org.apache.pdfbox.rendering.font.Type1Glyph2D;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDResources;
-import org.apache.pdfbox.pdmodel.common.PDMatrix;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
-import org.apache.pdfbox.pdmodel.font.PDFFontManager;
-import org.apache.pdfbox.pdmodel.font.PDCIDFontType0Font;
-import org.apache.pdfbox.pdmodel.font.PDCIDFontType2Font;
 import org.apache.pdfbox.pdmodel.font.PDFont;
-import org.apache.pdfbox.pdmodel.font.PDFontDescriptor;
-import org.apache.pdfbox.pdmodel.font.PDFontDescriptorDictionary;
 import org.apache.pdfbox.pdmodel.font.PDTrueTypeFont;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.apache.pdfbox.pdmodel.font.PDType1CFont;
@@ -87,17 +80,16 @@ import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
 import org.apache.pdfbox.pdmodel.graphics.pattern.PDTilingPattern;
 import org.apache.pdfbox.pdmodel.graphics.shading.PDShading;
 import org.apache.pdfbox.pdmodel.graphics.state.PDGraphicsState;
-import org.apache.pdfbox.pdmodel.graphics.state.PDTextState;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotation;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAppearanceDictionary;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAppearanceStream;
 import org.apache.pdfbox.util.Matrix;
- 
- 
-import org.apache.pdfbox.text.TextPosition;
-import org.apache.pdfbox.util.PDFGraphicsStreamEngine;
- 
 
+import org.apache.pdfbox.text.TextPosition; 
+
+import org.apache.pdfbox.contentstream.PDFGraphicsStreamEngine;
+import org.apache.pdfbox.pdmodel.font.PDSimpleFont;
+import org.apache.pdfbox.util.Vector;
 
 /**
  * Paints a page in a PDF document to a Graphics context.
@@ -115,6 +107,9 @@ public class PageDrawer extends PDFGraphicsStreamEngine
     private boolean highQuality = false;
     private Graphics2D graphics;
 
+    // initial transform
+    private AffineTransform xform;
+    
     // clipping winding rule used for the clipping path
     private int clipWindingRule = -1;
     private GeneralPath linePath = new GeneralPath();
@@ -122,10 +117,14 @@ public class PageDrawer extends PDFGraphicsStreamEngine
     // last clipping path
     private Area lastClip;
 
+    // buffered clipping area for text being drawn
+    private Area textClippingArea;
+
     private final Map<PDFont, Glyph2D> fontGlyph2D = new HashMap<PDFont, Glyph2D>();
-    private final Map<PDFont, Font> awtFonts = new HashMap<PDFont, Font>();
+
 
     private PDRectangle pageSize;
+
 
     private RenderingHints renderingHints=null;
     static private RenderingHints defaultRenderingHints;
@@ -140,6 +139,11 @@ public class PageDrawer extends PDFGraphicsStreamEngine
     /**
      * Default constructor, loads properties from file.
      *
+     * Default constructor, loads properties from file.
+     * 
+     * @param renderer renderer to render the page.
+     * @param page the page that is to be rendered.
+
      * @throws IOException If there is an error loading properties from the file.
      */
     public PageDrawer(PDFRenderer renderer, PDPage page) throws IOException
@@ -150,7 +154,8 @@ public class PageDrawer extends PDFGraphicsStreamEngine
 
     /**
      * Tiling pattern constructor, loads properties from file.
-     *
+     * 
+     * @param renderer renderer to render the page
      * @throws IOException If there is an error loading properties from the file.
      */
     PageDrawer(PDFRenderer renderer) throws IOException
@@ -161,7 +166,6 @@ public class PageDrawer extends PDFGraphicsStreamEngine
 
     /**
      * Returns the parent renderer.
-     * @return the parent renderer.
      */
     public PDFRenderer getRenderer()
     {
@@ -177,6 +181,7 @@ public class PageDrawer extends PDFGraphicsStreamEngine
        g.setRenderingHints(rh);
     }
 
+
     /**
      * Sets high-quality rendering hints on the current Graphics2D.
      */
@@ -191,18 +196,17 @@ public class PageDrawer extends PDFGraphicsStreamEngine
     }
 
     /**
-     * This will draw the page to the requested context.
-     *
+     * Draws the page to the requested context.
+     * 
      * @param g The graphics context to draw onto.
      * @param pageSize The size of the page to draw.
-     *
      * @throws IOException If there is an IO error while drawing the page.
      */
     public void drawPage(Graphics g, PDRectangle pageSize) throws IOException
     {
         graphics = (Graphics2D) g;
 
-        //this.pageSize = pageSize;
+        this.pageSize = pageSize;
         applyRenderingHints(graphics);
         graphics.translate(0, (int)pageSize.getHeight());
 
@@ -213,10 +217,16 @@ public class PageDrawer extends PDFGraphicsStreamEngine
         // Only if there is some content, we have to process it.
         // Otherwise we are done here and we will produce an empty page
         PDPage page = getPage();
+        
+        PDRectangle adjustedCropBox = page.calcAdjustedCropBox();
+        
         if (page.getContents() != null)
         {
-            PDResources resources = page.findResources();
-            processStream(resources, page.getContents().getStream(), page.findCropBox());
+            processStream(page.findResources(), page.getContents().getStream(), adjustedCropBox);
+        }
+        else
+        {
+            initStream(adjustedCropBox);
         }
 
         for (PDAnnotation annotation : page.getAnnotations())
@@ -236,16 +246,78 @@ public class PageDrawer extends PDFGraphicsStreamEngine
                     PDAppearanceStream appearance = appearanceMap.get(appearanceName);
                     if (appearance != null)
                     {
-                        Point2D point = new Point2D.Float(rect.getLowerLeftX(), rect.getLowerLeftY());
+                        saveGraphicsState();
+
+                        PDRectangle bBox = appearance.getBoundingBox();
+                        
+                        Rectangle2D rect2D = new Rectangle2D.Float(
+                                rect.getLowerLeftX(), 
+                                rect.getLowerLeftY(), 
+                                rect.getWidth(), 
+                                rect.getHeight());
                         Matrix matrix = appearance.getMatrix();
-                        if (matrix != null)
+                        if (matrix == null)
                         {
-                            matrix.createAffineTransform().transform(point, point);
+                            matrix = new Matrix();
                         }
+                        
+                        // PDF Spec 12.5.5:
+                        // a) The appearance's bounding box (specified by its BBox entry) 
+                        // shall be transformed, using Matrix, to produce a quadrilateral 
+                        // with arbitrary orientation.
+                        Point2D p1 = new Point2D.Float(bBox.getLowerLeftX(), bBox.getLowerLeftY());
+                        Point2D p2 = new Point2D.Float(bBox.getUpperRightX(), bBox.getUpperRightY());
+                        matrix.createAffineTransform().transform(p1, p1);
+                        matrix.createAffineTransform().transform(p2, p2);
+                        Rectangle2D transformedBBox = new Rectangle2D.Float(
+                                (float) Math.min(p1.getX(), p2.getX()),
+                                (float) Math.min(p1.getY(), p2.getY()),
+                                (float) Math.abs(p2.getX() - p1.getX()),
+                                (float) Math.abs(p2.getY() - p1.getY()));
+
+                        // PDF Spec 12.5.5:
+                        // b) A matrix A shall be computed that scales and translates 
+                        // the transformed appearance box to align with the edges
+                        // of the annotation's rectangle
+                        //
+                        // code inspired from
+                        // http://stackoverflow.com/a/14015713/535646
+                        AffineTransform at = new AffineTransform();
+                        at.translate(rect2D.getMinX(), rect2D.getMinY());
+                        at.scale(rect2D.getWidth() / transformedBBox.getWidth(), rect2D.getHeight() / transformedBBox.getHeight());
+                        at.translate(-transformedBBox.getMinX(), -transformedBBox.getMinY());
+                        Matrix matrixA = new Matrix();
+                        matrixA.setFromAffineTransform(at);
+                        
+                        // PDF Spec 12.5.5:
+                        // c) Matrix shall be concatenated with A to form a matrix AA 
+                        // that maps from the appearance's coordinate system to 
+                        // the annotation's rectangle in default user space
+                        Matrix matrixAA = matrix.multiply(matrixA);
+                        
+                        Point2D point = new Point2D.Float(matrixAA.getXPosition(), matrixAA.getYPosition());
+                        matrixAA.setValue(2, 0, 0);
+                        matrixAA.setValue(2, 1, 0);
+                        
+                        getGraphicsState().setCurrentTransformationMatrix(matrixAA);
+
+                        // Calculate clipping
+                        // PDF Spec 12.5.5:
+                        // a self-contained content stream that shall be rendered 
+                        // inside the annotation rectangle
+                        Rectangle2D clipRect2D = new Rectangle2D.Float(
+                                (float) (rect2D.getMinX()-point.getX()),
+                                (float) (rect2D.getMinY()-point.getY()),
+                                (float) rect2D.getWidth(),
+                                (float) rect2D.getHeight());
+                        getGraphicsState().intersectClippingPath(new Area(clipRect2D));
+
                         graphics.translate((int) point.getX(), (int) point.getY());
                         lastClip = null;
                         processSubStream(appearance.getResources(), appearance.getStream());
                         graphics.translate(-(int) point.getX(), -(int) point.getY());
+                       
+                        restoreGraphicsState();
                     }
                 }
             }
@@ -254,24 +326,27 @@ public class PageDrawer extends PDFGraphicsStreamEngine
     }
 
     /**
-     * This will draw the pattern stream to the requested context.
+     * Draws the pattern stream to the requested context.
      *
      * @param g The graphics context to draw onto.
      * @param pattern The tiling pattern to be used.
      * @param pageDimension The size of the page to draw.
+     * @param matrix initial substream transformation matrix.
+     * @param colorSpace color space for this tiling.
+     * @param color color for this tiling.
      * @throws IOException If there is an IO error while drawing the page.
      */
     public void drawTilingPattern(Graphics2D g, PDTilingPattern pattern, PDRectangle pageDimension,
                                   Matrix matrix, PDColorSpace colorSpace, PDColor color)
                                   throws IOException
     {
-        pageSize = pageDimension;
         graphics = g;
+
         applyRenderingHints(g);
 
         initStream(pageDimension);
 
-        // transform ctm
+        // transformPoint ctm
         Matrix concat = matrix.multiply(getGraphicsState().getCurrentTransformationMatrix());
         getGraphicsState().setCurrentTransformationMatrix(concat);
 
@@ -299,12 +374,13 @@ public class PageDrawer extends PDFGraphicsStreamEngine
         }
     }
 
+
     @Override
     public void beginText() throws IOException
     {
         setClip();
     }
-
+ 
         /**
      * You should override this method if you want to perform an action when a text is being processed.
      *
@@ -316,103 +392,104 @@ public class PageDrawer extends PDFGraphicsStreamEngine
 
 
     @Override
-    protected void processText(byte[] string) throws IOException
+    protected void showText(byte[] string) throws IOException
     {
         PDGraphicsState state = getGraphicsState();
-        Composite composite;
-        Paint paint;
-        switch (state.getTextState().getRenderingMode())
+        RenderingMode renderingMode = state.getTextState().getRenderingMode();
+
+        // buffer the text clip because it represents a single clipping area
+        if (renderingMode.isClip())
         {
-            case PDTextState.RENDERING_MODE_FILL_TEXT:
-                composite = state.getNonStrokeJavaComposite();
-                paint = getNonStrokingPaint();
-                break;
-            case PDTextState.RENDERING_MODE_STROKE_TEXT:
-                composite = state.getStrokeJavaComposite();
-                paint = getStrokingPaint();
-                break;
-            case PDTextState.RENDERING_MODE_NEITHER_FILL_NOR_STROKE_TEXT:
-                // basic support for text rendering mode "invisible"
-                // TODO why are we drawing anything at all?
-                paint = COLOR_TRANSPARENT;
-                composite = state.getStrokeJavaComposite();
-                break;
-            default:
-                // TODO : need to implement....
-                LOG.debug("Unsupported RenderingMode "
-                        + this.getGraphicsState().getTextState().getRenderingMode()
-                        + " in PageDrawer.processTextPosition()." + " Using RenderingMode "
-                        + PDTextState.RENDERING_MODE_FILL_TEXT + " instead");
-                composite = state.getNonStrokeJavaComposite();
-                paint = getNonStrokingPaint();
+            textClippingArea = new Area();
         }
-        graphics.setComposite(composite);
-        graphics.setPaint(paint);
-        super.processText(string);
+
+        super.showText(string);
+
+        // apply the buffered clip as one area
+        if (renderingMode.isClip())
+        {
+            state.intersectClippingPath(textClippingArea);
+            textClippingArea = null;
+        }
     }
 
     @Override
-    protected void processGlyph(Matrix textMatrix, Point2D.Float end, float maxHeight,
-                                float widthText, String unicode, int[] charCodes, PDFont font,
-                                float fontSize) throws IOException
+    protected void showGlyph(Matrix textRenderingMatrix, PDFont font, int code, String unicode,
+                             Vector displacement) throws IOException
     {
-        try
-        {
-            AffineTransform at = textMatrix.createAffineTransform();
-            PDMatrix fontMatrix = font.getFontMatrix();
+        AffineTransform at = textRenderingMatrix.createAffineTransform();
+        at.concatenate(font.getFontMatrix().createAffineTransform());
 
-            // use different methods to draw the string
-            if (font.isType3Font())
-            {
-                // Type3 fonts don't use the same units within the font matrix as the other fonts
-                at.scale(fontMatrix.getValue(0, 0), fontMatrix.getValue(1, 1));
-                // Type3 fonts are using streams for each character
-                drawType3String((PDType3Font) font, charCodes, at);
-            }
-            else
-            {
-                Glyph2D glyph2D = createGlyph2D(font);
-                if (glyph2D != null)
-                {
-                    AffineTransform fontMatrixAT = new AffineTransform(
-                            fontMatrix.getValue(0, 0), fontMatrix.getValue(0, 1),
-                            fontMatrix.getValue(1, 0), fontMatrix.getValue(1, 1),
-                            fontMatrix.getValue(2, 0), fontMatrix.getValue(2, 1));
-                    at.concatenate(fontMatrixAT);
-                    // Let PDFBox render the font if supported
-                    drawGlyph2D(glyph2D, charCodes, at);
-                }
-                else
-                {
-                    // Use AWT to render the font (standard14 fonts, substituted embedded fonts)
-                    // TODO to be removed in the long run
-                    drawString(font, unicode, at);
-                }
-            }
-        }
-        catch (IOException e)
+        if (font instanceof PDType3Font)
         {
-            LOG.error(e.getMessage(), e);  // todo: really?
+            // Type3 fonts use PDF streams for each character
+            drawType3String((PDType3Font) font, code, at);
+        }
+        else
+        {
+            // all other fonts use vectors
+            Glyph2D glyph2D = createGlyph2D(font);
+            drawGlyph2D(glyph2D, font, code, displacement, at);
         }
     }
 
     /**
-     * Render the font using the Glyph2d interface.
-     *
+     * Render the font using the Glyph2D interface.
+     * 
      * @param glyph2D the Glyph2D implementation provided a GeneralPath for each glyph
-     * @param codePoints the string to be rendered
+     * @param font the font
+     * @param code character code
+     * @param displacement the glyph's displacement (advance)
      * @param at the transformation
      * @throws IOException if something went wrong
      */
-    private void drawGlyph2D(Glyph2D glyph2D, int[] codePoints, AffineTransform at) throws IOException
+    private void drawGlyph2D(Glyph2D glyph2D, PDFont font, int code, Vector displacement,
+                             AffineTransform at) throws IOException
     {
+
         applyRenderingHints(graphics);
-        for (int i = 0; i < codePoints.length; i++)
+
+        PDGraphicsState state = getGraphicsState();
+        RenderingMode renderingMode = state.getTextState().getRenderingMode();
+
+        GeneralPath path = glyph2D.getPathForCharacterCode(code);
+        if (path != null)
         {
-            GeneralPath path = glyph2D.getPathForCharacterCode(codePoints[i]);
-            if (path != null)
+            // stretch non-embedded glyph if it does not match the width contained in the PDF
+            if (!font.isEmbedded())
             {
-                graphics.fill(at.createTransformedShape(path));
+                float fontWidth = font.getWidthFromFont(code);
+                if (fontWidth > 0 && // ignore spaces
+                        Math.abs(fontWidth - displacement.getX() * 1000) > 0.0001)
+                {
+                    float pdfWidth = displacement.getX() * 1000;
+                    at.scale(pdfWidth / fontWidth, 1);
+                }
+            }
+
+            // render glyph
+            Shape glyph = at.createTransformedShape(path);
+
+            if (renderingMode.isFill())
+            {
+                graphics.setComposite(state.getNonStrokingJavaComposite());
+                graphics.setPaint(getNonStrokingPaint());
+                graphics.fill(glyph);
+            }
+
+            if (renderingMode.isStroke())
+            {
+                graphics.setComposite(state.getStrokingJavaComposite());
+                graphics.setPaint(getStrokingPaint());
+                graphics.setStroke(getStroke());
+                graphics.draw(glyph);
+            }
+
+            if (renderingMode.isClip())
+            {
+
+                textClippingArea.add(new Area(glyph));
+
             }
         }
     }
@@ -421,64 +498,42 @@ public class PageDrawer extends PDFGraphicsStreamEngine
      * Render the text using a type 3 font.
      *
      * @param font the type3 font
-     * @param charCodes internal PDF character codes of glyphs
+     * @param code internal PDF character codes of glyph
      * @param at the transformation
      *
      * @throws IOException if something went wrong
      */
-    private void drawType3String(PDType3Font font, int[] charCodes, AffineTransform at) throws IOException
+    private void drawType3String(PDType3Font font, int code, AffineTransform at) throws IOException
     {
-        int textLength = charCodes.length;
-        for (int i = 0; i < textLength; i++)
-        {
-            COSStream stream = font.getCharStream((char) charCodes[i]);
+       
+            COSStream stream = font.getCharStream((char) code);
             if (stream != null)
             {
-                // save the current graphics state and matrices
-                saveGraphicsState();
-                Matrix textMatrix = getTextMatrix();
-                Matrix textLineMatrix = getTextLineMatrix();
 
-                Matrix ctm = new Matrix();
-                ctm.setFromAffineTransform(at);
-                getGraphicsState().setCurrentTransformationMatrix(ctm);
-                processSubStream(font.getType3Resources(), stream);
+            // save the current graphics state and matrices
+            saveGraphicsState();
+            Matrix textMatrix = getTextMatrix();
+            Matrix textLineMatrix = getTextLineMatrix();
 
-                // restore the saved graphics state and matrices
-                restoreGraphicsState();
-                setTextLineMatrix(textLineMatrix);
-                setTextMatrix(textMatrix);
+            Matrix ctm = new Matrix();
+            ctm.setFromAffineTransform(at);
+            getGraphicsState().setCurrentTransformationMatrix(ctm);
+            processSubStream(font.getType3Resources(), stream);
 
-            }
-            else
-            {
-                LOG.debug("drawType3String: stream for character " + (char) charCodes[i] + " not found");
+            // restore the saved graphics state and matrices
+            restoreGraphicsState();
+            setTextLineMatrix(textLineMatrix);
+            setTextMatrix(textMatrix);
             }
         }
-    }
+ 
+ 
 
-    /**
-     * This will draw a string on a canvas using the font.
-     *
-     * @param font the font to be used to draw the string
-     * @param string The string to draw.
-     * @param at The transformation matrix with all information for scaling and shearing of the font.
-     *
-     * @throws IOException If there is an error drawing the specific string.
-     */
-    private void drawString(PDFont font, String string, AffineTransform at) throws IOException
-    {
-        Font awtFont = createAWTFont(font);
-        FontRenderContext frc = new FontRenderContext(new AffineTransform(), true, true);
-        GlyphVector glyphs = awtFont.createGlyphVector(frc, string);
-
-        applyRenderingHints(graphics);
-
-        writeFont(at, glyphs);
-    }
+  
 
     private void writeFont(final AffineTransform at, final GlyphVector glyphs)
     {
+
         // Convert from PDF, where glyphs are upright when direction is from
         // bottom to top, to AWT, where this is the other way around
 
@@ -488,75 +543,26 @@ public class PageDrawer extends PDFGraphicsStreamEngine
         AffineTransform atRS = new AffineTransform(at.getScaleX(), at.getShearY(),
                 -at.getShearX(), -at.getScaleY(), 0, 0);
 
-        for (int i = 0; i < glyphs.getNumGlyphs(); i++)
+      //  for (int i = 0; i < glyphs.getNumGlyphs(); i++)
+
+        try
+
         {
-            glyphs.setGlyphTransform(i, atRS);
+            // Convert from PDF, where glyphs are upright when direction is from
+            // bottom to top, to AWT, where this is the other way around
+            at.scale(1, -1);
+            AffineTransform atInverse = at.createInverse();
+            graphics.transform(at);
+            graphics.drawGlyphVector(glyphs, 0, 0);
+            graphics.transform(atInverse);
         }
-        graphics.drawGlyphVector(glyphs, (float) at.getTranslateX(), (float) at.getTranslateY());
+        catch (NoninvertibleTransformException exception)
+        {
+            LOG.error("Can't invert the given affine transformation", exception);
+        }
     }
 
-    /**
-     * Provides an AWT font for the given PDFont.
-     *
-     * @param font the font which needs an AWT font
-     * @return the corresponding AWT font
-     * @throws IOException if something went wrong
-     */
-    private Font createAWTFont(PDFont font) throws IOException
-    {
-        Font awtFont = null;
-        // Is there already a AWTFont for the given font?
-        if (awtFonts.containsKey(font))
-        {
-            awtFont = awtFonts.get(font);
-        }
-        else
-        {
-            if (font instanceof PDType1Font)
-            {
-                PDType1Font type1Font = (PDType1Font) font;
-                PDFontDescriptor fd = type1Font.getFontDescriptor();
-                if (fd instanceof PDFontDescriptorDictionary)
-                {
-                    PDFontDescriptorDictionary fdDictionary = (PDFontDescriptorDictionary) fd;
-                    if (fdDictionary.getFontFile() == null)
-                    {
-                        // check if the font is part of our environment
-                        if (fd.getFontName() != null)
-                        {
-                            awtFont = PDFFontManager.getAwtFont(fd.getFontName());
-                        }
-                        if (awtFont == null)
-                        {
-                            LOG.info("Can't find the specified font " + fd.getFontName());
-                        }
-                    }
-                }
-                else
-                {
-                    // check if the font is part of our environment
-                    String baseFont = type1Font.getBaseFont();
-                    awtFont = PDFFontManager.getAwtFont(baseFont);
-                    if (awtFont == null)
-                    {
-                        LOG.info("Can't find the specified basefont " + baseFont);
-                    }
-                }
-            }
-            else
-            {
-                LOG.info("Unsupported type of font " + font.getClass().getName());
-            }
-            if (awtFont == null)
-            {
-                // Fallback: we can't find anything, so we have to use the standard font
-                awtFont = PDFFontManager.getAWTFallbackFont();
-                LOG.info("Using font " + awtFont.getName() + " instead of " + font.getBaseFont());
-            }
-            awtFonts.put(font, awtFont);
-        }
-        return awtFont;
-    }
+    
 
     /**
      * Provide a Glyph2D for the given font.
@@ -567,84 +573,62 @@ public class PageDrawer extends PDFGraphicsStreamEngine
      */
     private Glyph2D createGlyph2D(PDFont font) throws IOException
     {
-        Glyph2D glyph2D = null;
         // Is there already a Glyph2D for the given font?
         if (fontGlyph2D.containsKey(font))
         {
-            glyph2D = fontGlyph2D.get(font);
+            return fontGlyph2D.get(font);
+        }
+
+        Glyph2D glyph2D = null;
+        if (font instanceof PDTrueTypeFont)
+        {
+            PDTrueTypeFont ttfFont = (PDTrueTypeFont)font;
+            glyph2D = new TTFGlyph2D(ttfFont);  // TTF is never null
+        }
+        else if (font instanceof PDType1Font)
+        {
+            PDType1Font pdType1Font = (PDType1Font)font;
+            glyph2D = new Type1Glyph2D(pdType1Font); // T1 is never null
+        }
+        else if (font instanceof PDType1CFont)
+        {
+            PDType1CFont type1CFont = (PDType1CFont)font;
+            if (type1CFont.getCFFType1Font() != null) // todo: could be null (need to incorporate fallback)
+            {
+                glyph2D = new Type1Glyph2D(type1CFont);
+            }
+        }
+        else if (font instanceof PDType0Font)
+        {
+            PDType0Font type0Font = (PDType0Font) font;
+            if (type0Font.getDescendantFont() instanceof PDCIDFontType2)
+            {
+                glyph2D = new TTFGlyph2D(type0Font); // TTF is never null
+            }
+            else if (type0Font.getDescendantFont() instanceof PDCIDFontType0)
+            {
+                // a Type0 CIDFont contains CFF font
+                PDCIDFontType0 cidType0Font = (PDCIDFontType0)type0Font.getDescendantFont();
+                glyph2D = new CIDType0Glyph2D(cidType0Font); // todo: could be null (need incorporate fallback)
+            }
         }
         else
         {
-            // check if the given font is supported
-            if (font instanceof PDTrueTypeFont)
-            {
-                PDTrueTypeFont ttfFont = (PDTrueTypeFont) font;
-                // get the true type font raw data
-                TrueTypeFont ttf = ttfFont.getTTFFont();
-                if (ttf != null)
-                {
-                    glyph2D = new TTFGlyph2D(ttfFont);
-                }
-            }
-            else if (font instanceof PDType1Font)
-            {
-                PDType1Font pdType1Font = (PDType1Font) font;
-                PDType1CFont type1CFont = pdType1Font.getType1CFont();
-                if (type1CFont != null)
-                {
-                    // get the cffFont raw data
-                    CFFFont cffFont = type1CFont.getCFFFont();
-                    if (cffFont != null)
-                    {
-                        glyph2D = new Type1Glyph2D(cffFont, type1CFont.getFontEncoding());
-                    }
-                }
-                else
-                {
-                    // get the pfb raw data
-                    Type1Font type1Font = pdType1Font.getType1Font();
-                    if (type1Font != null)
-                    {
-                        glyph2D = new Type1Glyph2D(type1Font, pdType1Font.getFontEncoding());
-                    }
-                }
-            }
-            else if (font instanceof PDType0Font)
-            {
-                PDType0Font type0Font = (PDType0Font) font;
-                if (type0Font.getDescendantFont() instanceof PDCIDFontType2Font)
-                {
-                    // a Type2 CIDFont contains a TTF font
-                    PDCIDFontType2Font cidType2Font = (PDCIDFontType2Font) type0Font.getDescendantFont();
-                    // get the true type font raw data
-                    TrueTypeFont ttf = cidType2Font.getTTFFont();
-                    if (ttf != null)
-                    {
-                        glyph2D = new TTFGlyph2D(type0Font);
-                    }
-                }
-                else if (type0Font.getDescendantFont() instanceof PDCIDFontType0Font)
-                {
-                    // a Type0 CIDFont contains CFF font
-                    PDCIDFontType0Font cidType2Font = (PDCIDFontType0Font) type0Font.getDescendantFont();
-                    PDType1CFont type1CFont = cidType2Font.getType1CFont();
-                    if (type1CFont != null)
-                    {
-                        // get the cffFont raw data
-                        CFFFont cffFont = type1CFont.getCFFFont();
-                        if (cffFont != null)
-                        {
-                            glyph2D = new Type1Glyph2D(cffFont, type1CFont.getFontEncoding());
-                        }
-                    }
-                }
-            }
-            // cache the Glyph2D instance
-            if (glyph2D != null)
-            {
-                fontGlyph2D.put(font, glyph2D);
-            }
+            throw new IllegalStateException("Bad font type: " + font.getClass().getSimpleName());
         }
+
+        // cache the Glyph2D instance
+        if (glyph2D != null)
+        {
+            fontGlyph2D.put(font, glyph2D);
+        }
+
+        if (glyph2D == null)
+        {
+            // todo: make sure this never happens
+            throw new UnsupportedOperationException("No font for " + font.getName());
+        }
+
         return glyph2D;
     }
 
@@ -664,10 +648,10 @@ public class PageDrawer extends PDFGraphicsStreamEngine
     }
 
     /**
-     * Generates awt raster for a soft mask
-     *
-     * @param softMask
-     * @return awt raster for soft mask
+     * Generates AWT raster for a soft mask
+     * 
+     * @param softMask soft mask
+     * @return AWT raster for soft mask
      * @throws IOException
      */
     private Raster createSoftMaskRaster(PDSoftMask softMask) throws IOException
@@ -705,15 +689,17 @@ public class PageDrawer extends PDFGraphicsStreamEngine
     {
         PDGraphicsState graphicsState = getGraphicsState();
         return applySoftMaskToPaint(graphicsState.getStrokingColorSpace()
-                .toPaint(renderer, graphicsState.getStrokingColor(), (int)pageSize.getHeight()),
-                         graphicsState.getSoftMask());
+                .toPaint(renderer, graphicsState.getStrokingColor(),
+                         getSubStreamMatrix(), xform),
+                graphicsState.getSoftMask());
     }
 
     // returns the non-stroking AWT Paint
     private Paint getNonStrokingPaint() throws IOException
     {
         return getGraphicsState().getNonStrokingColorSpace()
-                .toPaint(renderer, getGraphicsState().getNonStrokingColor(), (int)pageSize.getHeight());
+                .toPaint(renderer, getGraphicsState().getNonStrokingColor(),
+                         getSubStreamMatrix(), xform);
     }
 
     // create a new stroke based on the current CTM and the current stroke
@@ -755,17 +741,10 @@ public class PageDrawer extends PDFGraphicsStreamEngine
     @Override
     public void strokePath() throws IOException
     {
-        graphics.setComposite(getGraphicsState().getStrokeJavaComposite());
+        graphics.setComposite(getGraphicsState().getStrokingJavaComposite());
         Paint strokingPaint = getStrokingPaint();
-        if (strokingPaint == null)
-        {
-            LOG.info("ColorSpace " + getGraphicsState().getStrokingColorSpace().getName() +
-                     " doesn't provide a stroking color, using white instead!");
-            strokingPaint = Color.WHITE;// ((PageDrawer)context).strokePath();
-        }
         graphics.setPaint(strokingPaint);
         graphics.setStroke(getStroke());
-        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
         setClip();
         graphics.draw(linePath);
         linePath.reset();
@@ -774,27 +753,93 @@ public class PageDrawer extends PDFGraphicsStreamEngine
     @Override
     public void fillPath(int windingRule) throws IOException
     {
-        graphics.setComposite(getGraphicsState().getNonStrokeJavaComposite());
+        graphics.setComposite(getGraphicsState().getNonStrokingJavaComposite());
         Paint nonStrokingPaint = getNonStrokingPaint();
-        if (nonStrokingPaint == null)
-        {
-            LOG.info("ColorSpace " + getGraphicsState().getNonStrokingColorSpace().getName() +
-                    " doesn't provide a non-stroking color, using white instead!");
-            nonStrokingPaint = Color.WHITE;
-        }
         graphics.setPaint(nonStrokingPaint);
-        linePath.setWindingRule(windingRule);
-        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
         setClip();
+        linePath.setWindingRule(windingRule);
+
+        // disable anti-aliasing for rectangular paths, this is a workaround to avoid small stripes
+        // which occur when solid fills are used to simulate piecewise gradients, see PDFBOX-2302
+        boolean isRectangular = isRectangular(linePath);
+        if (isRectangular)
+        {
+            graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                                      RenderingHints.VALUE_ANTIALIAS_OFF);
+        }
+
         graphics.fill(linePath);
         linePath.reset();
+
+        if (isRectangular)
+        {
+            // JDK 1.7 has a bug where rendering hints are reset by the above call to
+            // the setRenderingHint method, so we re-set all hints, see PDFBOX-2302
+            setRenderingHints();
+        }
+    }
+
+    /**
+     * Returns true if the given path is rectangular.
+     */
+    private boolean isRectangular(GeneralPath path)
+    {
+        PathIterator iter = path.getPathIterator(null);
+        double[] coords = new double[6];
+        int count = 0;
+        int[] xs = new int[4];
+        int[] ys = new int[4];
+        while (!iter.isDone())
+        {
+            switch(iter.currentSegment(coords))
+            {
+                case PathIterator.SEG_MOVETO:
+                    if (count == 0)
+                    {
+                        xs[count] = (int)Math.floor(coords[0]);
+                        ys[count] = (int)Math.floor(coords[1]);
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                    count++;
+                    break;
+
+                case PathIterator.SEG_LINETO:
+                    if (count < 4)
+                    {
+                        xs[count] = (int)Math.floor(coords[0]);
+                        ys[count] = (int)Math.floor(coords[1]);
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                    count++;
+                    break;
+
+                case PathIterator.SEG_CUBICTO:
+                    return false;
+
+                case PathIterator.SEG_CLOSE:
+                    break;
+            }
+            iter.next();
+        }
+
+        if (count == 4)
+        {
+            return xs[0] == xs[1] || xs[0] == xs[2] ||
+                   ys[0] == ys[1] || ys[0] == ys[3];
+        }
+        return false;
     }
 
     /**
      * Fills and then strokes the path.
      *
      * @param windingRule The winding rule this path will use.
-     *
      * @throws IOException If there is an IO error while filling the path.
      */
     @Override
@@ -855,7 +900,8 @@ public class PageDrawer extends PDFGraphicsStreamEngine
         }
         linePath.reset();
     }
-
+    
+    @Override
     public void drawImage(PDImage pdImage) throws IOException
     {
         Matrix ctm = getGraphicsState().getCurrentTransformationMatrix();
@@ -866,22 +912,43 @@ public class PageDrawer extends PDFGraphicsStreamEngine
             // fill the image with paint
             PDColorSpace colorSpace = getGraphicsState().getNonStrokingColorSpace();
             PDColor color = getGraphicsState().getNonStrokingColor();
-            BufferedImage image = pdImage.getStencilImage(colorSpace.toPaint(renderer, color,
-                                                          (int)pageSize.getHeight()));
+            BufferedImage image = pdImage.getStencilImage(
+                    colorSpace.toPaint(renderer, color, getSubStreamMatrix(), xform));
 
             // draw the image
             drawBufferedImage(image, at);
         }
         else
         {
+            if (!pdImage.getInterpolate())
+            {
+                boolean isScaledUp = Math.round(pdImage.getWidth()) < Math.round(at.getScaleX()) ||
+                                     Math.round(pdImage.getHeight()) < Math.round(at.getScaleY());
+
+                // if the image is scaled down, we use smooth interpolation, eg PDFBOX-2364
+                // only when scaled up do we use nearest neighbour, eg PDFBOX-2302 / mori-cvpr01.pdf
+                if (isScaledUp)
+                {
+                    graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                                              RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+                }
+            }
+
             // draw the image
             drawBufferedImage(pdImage.getImage(), at);
+
+            if (!pdImage.getInterpolate())
+            {
+                // JDK 1.7 has a bug where rendering hints are reset by the above call to
+                // the setRenderingHint method, so we re-set all hints, see PDFBOX-2302
+                setRenderingHints();
+            }
         }
     }
 
     public void drawBufferedImage(BufferedImage image, AffineTransform at) throws IOException
     {
-        graphics.setComposite(getGraphicsState().getNonStrokeJavaComposite());
+        graphics.setComposite(getGraphicsState().getNonStrokingJavaComposite());
         setClip();
         PDSoftMask softMask = getGraphicsState().getSoftMask();
         if( softMask != null )
@@ -894,8 +961,6 @@ public class PageDrawer extends PDFGraphicsStreamEngine
                             imageTransform.getScaleX(), imageTransform.getScaleY()));
             awtPaint = applySoftMaskToPaint(awtPaint, softMask);
             graphics.setPaint(awtPaint);
-            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
-                    RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
             Rectangle2D unitRect = new Rectangle2D.Float(0, 0, 1, 1);
             graphics.fill(at.createTransformedShape(unitRect));
         }
@@ -940,7 +1005,6 @@ public class PageDrawer extends PDFGraphicsStreamEngine
             graphics.drawImage(image, imageTransform, null);
         }
     }
-
     /**
      * Draw the AWT image. Called by Invoke. Moved into PageDrawer so that Invoke doesn't have to reach in here for
      * Graphics as that breaks extensibility.
@@ -951,7 +1015,7 @@ public class PageDrawer extends PDFGraphicsStreamEngine
      */
     public void drawImage(Image image, AffineTransform at)
     {
-        graphics.setComposite(getGraphicsState().getNonStrokeJavaComposite());
+        graphics.setComposite(getGraphicsState().getNonStrokingJavaComposite());
         graphics.setClip(getGraphicsState().getCurrentClippingPath());
         int width = image.getWidth(null);
         int height = image.getHeight(null);
@@ -999,17 +1063,18 @@ public class PageDrawer extends PDFGraphicsStreamEngine
         graphics.drawImage(image, imageTransform, null);
     }
 
+     
+
 
     @Override
     public void shadingFill(COSName shadingName) throws IOException
     {
-        PDShading shading = getResources().getShadings().get(shadingName.getName());
+        PDShading shading = getResources().getShading(shadingName);
         Matrix ctm = getGraphicsState().getCurrentTransformationMatrix();
-        Paint paint = shading.toPaint(ctm, (int)pageSize.getHeight());
+        Paint paint = shading.toPaint(ctm);
 
-        graphics.setComposite(getGraphicsState().getNonStrokeJavaComposite());
+        graphics.setComposite(getGraphicsState().getNonStrokingJavaComposite());
         graphics.setPaint(paint);
-        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
         graphics.setClip(null);
         lastClip = null;
         graphics.fill(getGraphicsState().getCurrentClippingPath());
@@ -1078,7 +1143,6 @@ public class PageDrawer extends PDFGraphicsStreamEngine
             Area lastClipOriginal = lastClip;
 
             // check underlying g2d
-            double unitSize = 1.0;
 
             Area groupClip = new Area(getGraphicsState().getCurrentClippingPath());
             if (clippingPath != null)
@@ -1088,7 +1152,6 @@ public class PageDrawer extends PDFGraphicsStreamEngine
             }
 
             AffineTransform at = g2dOriginal.getTransform();
-            at.scale(unitSize, unitSize);
             Shape clippingPathInPixels = at.createTransformedShape(groupClip);
             Rectangle2D bounds2D = clippingPathInPixels.getBounds2D();
 
@@ -1133,7 +1196,10 @@ public class PageDrawer extends PDFGraphicsStreamEngine
             }
             finally
             {
-                lastClip = lastClipOriginal;
+
+                lastClip = lastClipOriginal;                
+                //graphics.dispose(); // TODO: BUG: Don't do this!
+
                 graphics = g2dOriginal;
             }
         }
@@ -1168,6 +1234,7 @@ public class PageDrawer extends PDFGraphicsStreamEngine
             BufferedImage gray = new BufferedImage(width, height, BufferedImage.TYPE_BYTE_GRAY);
             Graphics g = gray.getGraphics();
             g.drawImage(image, 0, 0, null);
+            g.dispose();
 
             WritableRaster result = gray.getRaster();
             return result.createTranslatedChild(minX, minY);

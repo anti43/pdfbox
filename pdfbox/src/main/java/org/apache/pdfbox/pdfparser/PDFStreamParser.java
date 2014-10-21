@@ -24,6 +24,8 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSBoolean;
@@ -33,53 +35,51 @@ import org.apache.pdfbox.cos.COSNull;
 import org.apache.pdfbox.cos.COSNumber;
 import org.apache.pdfbox.cos.COSObject;
 import org.apache.pdfbox.cos.COSStream;
-import org.apache.pdfbox.io.RandomAccess;
 import org.apache.pdfbox.pdmodel.common.PDStream;
-import org.apache.pdfbox.util.operator.Operator;
+import org.apache.pdfbox.contentstream.operator.Operator;
 
 /**
  * This will parse a PDF byte stream and extract operands and such.
  *
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * @version $Revision$
+ * @author Ben Litchfield
  */
 public class PDFStreamParser extends BaseParser
 {
+    /**
+     * Log instance.
+     */
+    private static final Log LOG = LogFactory.getLog(PDFStreamParser.class);
+
     private List<Object> streamObjects = new ArrayList<Object>( 100 );
-    private final RandomAccess file;
-    private final int    maxBinCharTestLength = 5;
-    private final byte[] binCharTestArr = new byte[maxBinCharTestLength];
+    private final int MAX_BIN_CHAR_TEST_LENGTH = 10;
+    private final byte[] binCharTestArr = new byte[MAX_BIN_CHAR_TEST_LENGTH];
 
     /**
      * Constructor that takes a stream to parse.
      *
      * @since Apache PDFBox 1.3.0
      * @param stream The stream to read data from.
-     * @param raf The random access file.
      * @param forceParsing flag to skip malformed or otherwise unparseable
      *                     input where possible
      * @throws IOException If there is an error reading from the stream.
      */
-    public PDFStreamParser(
-            InputStream stream, RandomAccess raf, boolean forceParsing)
+    public PDFStreamParser(InputStream stream, boolean forceParsing)
             throws IOException 
     {
         super(stream, forceParsing);
-        file = raf;
     }
 
     /**
      * Constructor that takes a stream to parse.
      *
      * @param stream The stream to read data from.
-     * @param raf The random access file.
      *
      * @throws IOException If there is an error reading from the stream.
      */
-    public PDFStreamParser(InputStream stream, RandomAccess raf)
+    public PDFStreamParser(InputStream stream)
             throws IOException 
     {
-        this(stream, raf, FORCE_PARSING);
+        this(stream, FORCE_PARSING);
     }
 
     /**
@@ -91,7 +91,7 @@ public class PDFStreamParser extends BaseParser
      */
     public PDFStreamParser( PDStream stream ) throws IOException
     {
-       this( stream.createInputStream(), stream.getStream().getScratchFile() );
+       this( stream.createInputStream() );
     }
 
     /**
@@ -106,7 +106,7 @@ public class PDFStreamParser extends BaseParser
     public PDFStreamParser(COSStream stream, boolean forceParsing)
             throws IOException 
     {
-       this(stream.getUnfilteredStream(), stream.getScratchFile(), forceParsing);
+       this(stream.getUnfilteredStream(), forceParsing);
     }
 
     /**
@@ -118,7 +118,7 @@ public class PDFStreamParser extends BaseParser
      */
     public PDFStreamParser( COSStream stream ) throws IOException
     {
-       this( stream.getUnfilteredStream(), stream.getScratchFile() );
+       this( stream.getUnfilteredStream() );
     }
 
     /**
@@ -135,7 +135,6 @@ public class PDFStreamParser extends BaseParser
             while( (token = parseNextToken()) != null )
             {
                 streamObjects.add( token );
-                //logger().fine( "parsed=" + token );
             }
         }
         finally
@@ -253,7 +252,7 @@ public class PDFStreamParser extends BaseParser
                     skipSpaces();
                     if((char)pdfSource.peek() == 's')
                     {
-                        retval = parseCOSStream( pod, file );
+                        retval = parseCOSStream( pod );
                     }
                     else
                     {
@@ -342,13 +341,13 @@ public class PDFStreamParser extends BaseParser
                 buf.append( c );
                 pdfSource.read();
 
-                boolean dotNotRead = (c != '.');
-                while( Character.isDigit(( c = (char)pdfSource.peek()) ) || (dotNotRead && (c == '.')) )
+                boolean dotNotRead = c != '.';
+                while( Character.isDigit(c = (char)pdfSource.peek()) || dotNotRead && c == '.')
                 {
                     buf.append( c );
                     pdfSource.read();
 
-                    if (dotNotRead && (c == '.'))
+                    if (dotNotRead && c == '.')
                     {
                         dotNotRead = false;
                     }
@@ -400,8 +399,7 @@ public class PDFStreamParser extends BaseParser
                 while( !(lastByte == 'E' &&
                          currentByte == 'I' &&
                          hasNextSpaceOrReturn() &&
-                         hasNoFollowingBinData( pdfSource ) &&
-                         !hasPrecedingAscii85Data(imageData)) &&
+                         hasNoFollowingBinData( pdfSource )) &&
                        !pdfSource.isEOF() )
                 {
                     imageData.write( lastByte );
@@ -441,62 +439,65 @@ public class PDFStreamParser extends BaseParser
     }
 
     /**
-     * Looks up next 5 bytes if they contain only ASCII characters (no control
-     * sequences etc.).
+     * Looks up an amount of bytes if they contain only ASCII characters (no
+     * control sequences etc.), and that these ASCII characters begin with a
+     * sequence of 1-3 non-blank characters between blanks
      *
-     * @return <code>true</code> if next 5 bytes are printable ASCII characters,
-     * otherwise <code>false</code>
+     * @return <code>true</code> if next bytes are probably printable ASCII
+     * characters starting with a PDF operator, otherwise <code>false</code>
      */
     private boolean hasNoFollowingBinData(final PushbackInputStream pdfSource) 
             throws IOException
     {
         // as suggested in PDFBOX-1164
-        final int readBytes = pdfSource.read(binCharTestArr, 0, maxBinCharTestLength);
+        final int readBytes = pdfSource.read(binCharTestArr, 0, MAX_BIN_CHAR_TEST_LENGTH);
         boolean noBinData = true;
+        int startOpIdx = -1;
+        int endOpIdx = -1;
         
         if (readBytes > 0)
         {
             for (int bIdx = 0; bIdx < readBytes; bIdx++)
             {
                 final byte b = binCharTestArr[bIdx];
-                if ((b < 0x09) || ((b > 0x0a) && (b < 0x20) && (b != 0x0d)))
+                if (b < 0x09 || b > 0x0a && b < 0x20 && b != 0x0d)
                 {
                     // control character or > 0x7f -> we have binary data
                     noBinData = false;
                     break;
                 }
+                // find the start of a PDF operator
+                if (startOpIdx == -1 && !(b == 9 || b == 0x20 || b == 0x0a || b == 0x0d))
+                {
+                    startOpIdx = bIdx;
+                }
+                else if (startOpIdx != -1 && endOpIdx == -1 &&
+                         (b == 9 || b == 0x20 || b == 0x0a || b == 0x0d))
+                {
+                    endOpIdx = bIdx;
+                }
+            }
+            if (readBytes == MAX_BIN_CHAR_TEST_LENGTH) // only if not close to eof
+            {
+                // a PDF operator is 1-3 bytes long
+                if (startOpIdx != -1 && endOpIdx == -1)
+                {
+                    endOpIdx = MAX_BIN_CHAR_TEST_LENGTH;
+                }
+                if (endOpIdx != -1 && startOpIdx != -1 && endOpIdx - startOpIdx > 3)
+                {
+                    noBinData = false;
+                }
             }
             pdfSource.unread(binCharTestArr, 0, readBytes);
+        }
+        if (!noBinData)
+        {
+            LOG.warn("ignoring 'EI' assumed to be in the middle of inline image");
         }
         return noBinData;
     }
 
-    /**
-     * Check whether the output stream ends with 70 ASCII85 data bytes
-     * (33..117). This method is to be called when "EI" and then space/LF/CR
-     * are detected.
-     *
-     * @param imageData output data stream without the "EI"
-     * @return true if this is an ASCII85 line so the "EI" is to be considered
-     * part of the data stream, false if not
-     */
-    private boolean hasPrecedingAscii85Data(ByteArrayOutputStream imageData)
-    {
-        if (imageData.size() < 70)
-        {
-            return false;
-        }
-        byte[] tab = imageData.toByteArray();
-        for (int i = tab.length - 1; i >= tab.length - 70; --i)
-        {
-            if (tab[i] < 33 || tab[i] > 117)
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-    
     /**
      * This will read an operator from the stream.
      *

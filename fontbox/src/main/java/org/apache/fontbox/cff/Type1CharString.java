@@ -40,7 +40,7 @@ public class Type1CharString
 {
     private static final Log LOG = LogFactory.getLog(Type1CharString.class);
 
-    private Type1CharStringReader reader;
+    private Type1CharStringReader font;
     private String fontName, glyphName;
     private GeneralPath path = null;
     private int width = 0;
@@ -49,28 +49,36 @@ public class Type1CharString
     private boolean isFlex = false;
     private List<Point.Float> flexPoints = new ArrayList<Point2D.Float>();
     protected List<Object> type1Sequence;
+    protected int commandCount;
 
     /**
      * Constructs a new Type1CharString object.
-     * @param reader Parent Type 1 CharString reader
+     * @param font Parent Type 1 CharString font
      * @param sequence Type 1 char string sequence
      */
-    public Type1CharString(Type1CharStringReader reader, String fontName, String glyphName, List<Object> sequence)
+    public Type1CharString(Type1CharStringReader font, String fontName, String glyphName,
+                           List<Object> sequence)
     {
-        this(reader, fontName, glyphName);
+        this(font, fontName, glyphName);
         type1Sequence = sequence;
     }
 
     /**
      * Constructor for use in subclasses.
-     * @param reader Parent Type 1 CharString reader
+     * @param font Parent Type 1 CharString font
      */
-    protected Type1CharString(Type1CharStringReader reader, String fontName, String glyphName)
+    protected Type1CharString(Type1CharStringReader font, String fontName, String glyphName)
     {
-        this.reader = reader;
+        this.font = font;
         this.fontName = fontName;
         this.glyphName = glyphName;
         this.current = new Point2D.Float(0, 0);
+    }
+
+    // todo: NEW name (or CID as hex)
+    public String getName()
+    {
+        return glyphName;
     }
 
     /**
@@ -140,6 +148,7 @@ public class Type1CharString
 
     private List<Integer> handleCommand(List<Integer> numbers, CharStringCommand command)
     {
+        commandCount++;
         String name = CharStringCommand.TYPE1_VOCABULARY.get(command.getKey());
 
         if ("rmoveto".equals(name))
@@ -240,8 +249,8 @@ public class Type1CharString
             int result = a / b; // TODO loss of precision, should be float
 
             List<Integer> list = new ArrayList<Integer>(numbers);
-            numbers.remove(numbers.size() - 1);
-            numbers.remove(numbers.size() - 1);
+            list.remove(list.size() - 1);
+            list.remove(list.size() - 1);
             list.add(result);
             return list;
         }
@@ -287,9 +296,17 @@ public class Type1CharString
             // end flex
             isFlex = false;
 
+            if (flexPoints.size() < 7)
+            {
+                LOG.warn("flex without moveTo in font " + fontName + ", glyph " + glyphName +
+                         ", command " + commandCount);
+                return;
+            }
+
             // reference point is relative to start point
             Point.Float reference = flexPoints.get(0);
-            reference.setLocation(current.getX() + reference.getX(), current.getY() + reference.getY());
+            reference.setLocation(current.getX() + reference.getX(),
+                                  current.getY() + reference.getY());
 
             // first point is relative to reference point
             Point.Float first = flexPoints.get(1);
@@ -299,12 +316,12 @@ public class Type1CharString
             first.setLocation(first.getX() - current.getX(), first.getY() - current.getY());
 
             rrcurveTo(flexPoints.get(1).getX(), flexPoints.get(1).getY(),
-                    flexPoints.get(2).getX(), flexPoints.get(2).getY(),
-                    flexPoints.get(3).getX(), flexPoints.get(3).getY());
+                      flexPoints.get(2).getX(), flexPoints.get(2).getY(),
+                      flexPoints.get(3).getX(), flexPoints.get(3).getY());
 
             rrcurveTo(flexPoints.get(4).getX(), flexPoints.get(4).getY(),
-                    flexPoints.get(5).getX(), flexPoints.get(5).getY(),
-                    flexPoints.get(6).getX(), flexPoints.get(6).getY());
+                      flexPoints.get(5).getX(), flexPoints.get(5).getY(),
+                      flexPoints.get(6).getX(), flexPoints.get(6).getY());
 
             flexPoints.clear();
         }
@@ -403,7 +420,7 @@ public class Type1CharString
         {
             try
             {
-                Type1CharString base = reader.getType1CharString(baseName);
+                Type1CharString base = font.getType1CharString(baseName);
                 path.append(base.getPath().getPathIterator(null), false);
             }
             catch (IOException e)
@@ -417,7 +434,7 @@ public class Type1CharString
         {
             try
             {
-                Type1CharString accent = reader.getType1CharString(accentName);
+                Type1CharString accent = font.getType1CharString(accentName);
                 AffineTransform at = AffineTransform.getTranslateInstance(
                     leftSideBearing.getX() + adx.floatValue(),
                     leftSideBearing.getY() + ady.floatValue());
@@ -428,5 +445,11 @@ public class Type1CharString
                 LOG.warn("invalid seac character in glyph " + glyphName + " of font " + fontName);
             }
         }
+    }
+
+    @Override
+    public String toString()
+    {
+        return type1Sequence.toString().replace("|","\n").replace(",", " ");
     }
 }

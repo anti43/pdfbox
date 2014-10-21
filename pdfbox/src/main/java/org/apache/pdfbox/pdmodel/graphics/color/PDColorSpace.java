@@ -20,8 +20,8 @@ import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSObject;
+import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.common.COSObjectable;
-import org.apache.pdfbox.pdmodel.graphics.pattern.PDAbstractPattern;
 import org.apache.pdfbox.rendering.PDFRenderer;
 
 import java.awt.Color;
@@ -33,8 +33,9 @@ import java.awt.image.ComponentColorModel;
 import java.awt.image.WritableRaster;
 import java.io.IOException;
 import java.awt.color.ColorSpace;
+import java.awt.geom.AffineTransform;
 import java.awt.image.ColorModel;
-import java.util.Map;
+import org.apache.pdfbox.util.Matrix;
 
 /**
  * A color space specifies how the colours of graphics objects will be painted on the page.
@@ -52,25 +53,24 @@ public abstract class PDColorSpace implements COSObjectable
      */
     public static PDColorSpace create(COSBase colorSpace) throws IOException
     {
-        return create(colorSpace, null, null);
+        return create(colorSpace, null);
     }
 
     /**
      * Creates a color space given a name or array.
      * @param colorSpace the color space COS object
-     * @param colorSpaces the ColorSpace dictionary from the current resources, if any
-     * @param patterns The Pattern dictionary from the current resources, if any
+     * @param resources the current resources.
      * @return a new color space
+     * @throws MissingException if the color space is missing from the resources dictionary
      * @throws IOException if the color space is unknown or cannot be created
      */
     public static PDColorSpace create(COSBase colorSpace,
-                                      Map<String, PDColorSpace> colorSpaces,
-                                      Map<String, PDAbstractPattern> patterns)
+                                      PDResources resources)
                                       throws IOException
     {
         if (colorSpace instanceof COSObject)
         {
-            return create(((COSObject) colorSpace).getObject(), colorSpaces, patterns);
+            return create(((COSObject) colorSpace).getObject(), resources);
         }
         else if (colorSpace instanceof COSName)
         {
@@ -90,17 +90,20 @@ public abstract class PDColorSpace implements COSObjectable
             }
             else if (name == COSName.PATTERN)
             {
-                return new PDPattern(patterns);
+                return new PDPattern(resources);
             }
-            else if (colorSpaces != null && colorSpaces.get(name.getName()) != null)
+            else if (resources != null)
             {
-                // a color space resource
-                return colorSpaces.get(name.getName());
+                PDColorSpace cs = resources.getColorSpace(name);
+                if (cs == null)
+                {
+                    throw new MissingException("Missing color space: " + name.getName());
+                }
+                return cs;
             }
             else
             {
-                throw new IOException("The color space '" + name + "' does not exist in the " +
-                                      "current page's resources");
+                throw new MissingException("Unknown color space: " + name.getName());
             }
         }
         else if (colorSpace instanceof COSArray)
@@ -142,11 +145,11 @@ public abstract class PDColorSpace implements COSObjectable
             {
                 if (array.size() == 1)
                 {
-                    return new PDPattern(patterns);
+                    return new PDPattern(resources);
                 }
                 else
                 {
-                    return new PDPattern(patterns, PDColorSpace.create(array.get(1)));
+                    return new PDPattern(resources, PDColorSpace.create(array.get(1)));
                 }
             }
             else if (name == COSName.DEVICECMYK || name == COSName.CMYK ||
@@ -154,7 +157,7 @@ public abstract class PDColorSpace implements COSObjectable
                      name == COSName.DEVICEGRAY || name == COSName.PATTERN)
             {
                 // not allowed in an array, but we sometimes encounter these regardless
-                return create(name, colorSpaces, patterns);
+                return create(name, resources);
             }
             else
             {
@@ -236,26 +239,16 @@ public abstract class PDColorSpace implements COSObjectable
     }
 
     /**
-     * Returns the AWT paint which corresponds to the given color value in this color space.
-     * @param color the color value
-     * @return an AWT paint
-     * @throws IOException if the color conversion fails
-     */
-    public Paint toPaint(PDFRenderer renderer,  PDColor color) throws IOException
-    {
-        return toPaint(renderer, color, 0);
-    }
-
-    /**
      * Returns the AWT paint which corresponds to the given color value in this color space
-     * and the height of the current page.
-     * This is for use with pattern color spaces
+     * and the height of the current page. This is for use with pattern color spaces.
      * @param color the color value
-     * @param pageHeight the height of the current page, used by pattern color spaces
+     * @param subStreamMatrix the substream matrix
+     * @param xform the graphics transform
      * @return an AWT paint
      * @throws IOException if the color conversion fails
      */
-    public Paint toPaint(PDFRenderer renderer, PDColor color, int pageHeight) throws IOException
+    public Paint toPaint(PDFRenderer renderer, PDColor color, Matrix subStreamMatrix,
+                         AffineTransform xform) throws IOException
     {
         float[] rgb = toRGB(color.getComponents());
         return new Color(rgb[0], rgb[1], rgb[2]);
@@ -267,4 +260,11 @@ public abstract class PDColorSpace implements COSObjectable
         return array;
     }
 
+    public static class MissingException extends IOException
+    {
+        private MissingException(String message)
+        {
+            super(message);
+        }
+    }
 }

@@ -1,0 +1,57 @@
+From e20b6b54507dafdfc4c39976e21874926f72239f Mon Sep 17 00:00:00 2001
+From: Tilman Hausherr <tilman@apache.org>
+Date: Tue, 29 Apr 2014 18:41:06 +0000
+Subject: [PATCH] PDFBOX-2034: testFilters now does deterministic and
+ non-deterministic tests
+
+git-svn-id: https://svn.apache.org/repos/asf/pdfbox/trunk@1591050 13f79535-47bb-0310-9956-ffa450edef68
+---
+ .../java/org/apache/pdfbox/filter/TestFilters.java | 22 ++++++++++++++++++----
+ 1 file changed, 18 insertions(+), 4 deletions(-)
+
+diff --git a/pdfbox/src/test/java/org/apache/pdfbox/filter/TestFilters.java b/pdfbox/src/test/java/org/apache/pdfbox/filter/TestFilters.java
+index cfbaba1..e125d2a 100644
+--- a/pdfbox/src/test/java/org/apache/pdfbox/filter/TestFilters.java
++++ b/pdfbox/src/test/java/org/apache/pdfbox/filter/TestFilters.java
+@@ -34,15 +34,29 @@
+ public class TestFilters extends TestCase
+ {
+     /**
+-     * This will test all of the filters in the system.
++     * This will test all of the filters in the system. There will be COUNT
++     * of deterministic tests and COUNT of non-deterministic tests, see also
++     * the discussion in PDFBOX-1977.
+      *
+      * @throws IOException If there is an exception while encoding.
+      */
+     public void testFilters() throws IOException
+     {
+-        for(int iter=0;iter<10;iter++) 
++        final int COUNT = 10;
++        Random rd = new Random(123456);
++        for (int iter = 0; iter < COUNT * 2; iter++)
+         {
+-            final long seed = new Random().nextLong();
++            long seed;
++            if (iter < COUNT)
++            {
++                // deterministic seed
++                seed = rd.nextLong();
++            }
++            else
++            {
++                // non-deterministic seed
++                seed = new Random().nextLong();
++            }
+             boolean success = false;
+             try 
+             {
+@@ -56,7 +70,7 @@ public void testFilters() throws IOException
+                     final int left = numBytes - upto;
+                     if (random.nextBoolean() || left < 2) 
+                     {
+-                        // Fill w/ truly random bytes:
++                        // Fill w/ pseudo-random bytes:
+                         final int end = upto + Math.min(left, 10+random.nextInt(100));
+                         while(upto < end) 
+                         {

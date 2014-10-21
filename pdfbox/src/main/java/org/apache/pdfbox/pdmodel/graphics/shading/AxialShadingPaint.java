@@ -31,6 +31,7 @@ import org.apache.pdfbox.util.Matrix;
 
 /**
  * AWT Paint for axial shading.
+ *
  * @author Andreas Lehmkühler
  */
 public class AxialShadingPaint implements Paint
@@ -39,35 +40,33 @@ public class AxialShadingPaint implements Paint
 
     private PDShadingType2 shading;
     private Matrix ctm;
-    private int pageHeight;
-    
+
     /**
      * Constructor.
+     *
      * @param shadingType2 the shading resources
      * @param ctm current transformation matrix
-     * @param pageHeight size of the current page
      */
-    AxialShadingPaint(PDShadingType2 shadingType2, Matrix ctm, int pageHeight)
+    AxialShadingPaint(PDShadingType2 shadingType2, Matrix ctm)
     {
         shading = shadingType2;
         this.ctm = ctm;
-        this.pageHeight = pageHeight;
     }
 
     @Override
-    public int getTransparency() 
+    public int getTransparency()
     {
         return 0;
     }
 
     @Override
     public PaintContext createContext(ColorModel cm, Rectangle deviceBounds,
-                                      Rectangle2D userBounds, AffineTransform xform,
-                                      RenderingHints hints)
+            Rectangle2D userBounds, AffineTransform xform,
+            RenderingHints hints)
     {
         try
         {
-            return new AxialShadingContext(shading, cm, xform, ctm, pageHeight);
+            return new AxialShadingContext(shading, cm, xform, ctm, deviceBounds);
         }
         catch (IOException ex)
         {

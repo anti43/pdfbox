@@ -26,10 +26,13 @@ import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_FONTS_UNKNOWN
 import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_SYNTAX_CONTENT_STREAM_INVALID_ARGUMENT;
 import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_SYNTAX_CONTENT_STREAM_UNSUPPORTED_OP;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 
 import org.apache.pdfbox.cos.COSArray;
+import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSFloat;
 import org.apache.pdfbox.cos.COSInteger;
@@ -40,17 +43,15 @@ import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.common.PDStream;
 import org.apache.pdfbox.pdmodel.font.PDFont;
-import org.apache.pdfbox.pdmodel.graphics.state.PDGraphicsState;
 import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
 import org.apache.pdfbox.pdmodel.graphics.state.PDTextState;
+import org.apache.pdfbox.pdmodel.graphics.state.RenderingMode;
 import org.apache.pdfbox.preflight.PreflightContext;
 import org.apache.pdfbox.preflight.ValidationResult.ValidationError;
 import org.apache.pdfbox.preflight.exception.ValidationException;
 import org.apache.pdfbox.preflight.font.container.FontContainer;
 import org.apache.pdfbox.preflight.font.util.GlyphException;
-import org.apache.pdfbox.util.operator.Operator;
-import org.apache.pdfbox.util.operator.Operator;
-import org.apache.pdfbox.util.operator.OperatorProcessor;
+import org.apache.pdfbox.contentstream.operator.Operator;
 
 public class PreflightContentStream extends PreflightStreamEngine
 {
@@ -135,45 +136,34 @@ public class PreflightContentStream extends PreflightStreamEngine
         }
     }
 
-    /*
-     * (non-Javadoc)
-     * 
-     * @see org.apache.pdfbox.util.PDFStreamEngine#processOperator(org.apache.pdfbox .util.PDFOperator, java.util.List)
-     */
-    protected void processOperator(Operator operator, List arguments) throws IOException
+    @Override
+    protected void processOperator(Operator operator, List<COSBase> arguments) throws IOException
     {
-        /*
-         * Here is a copy of the super method because the else block is different. (If the operator is unknown, throw an
-         * exception)
-         */
-        String operation = operator.getOperation();
-        OperatorProcessor processor = (OperatorProcessor) contentStreamEngineOperators.get(operation);
-        if (processor != null)
-        {
-            processor.setContext(this);
-            processor.process(operator, arguments);
-        }
-        else
-        {
-            registerError("The operator \"" + operation + "\" isn't supported.",
-                    ERROR_SYNTAX_CONTENT_STREAM_UNSUPPORTED_OP);
-            return;
-        }
+        super.processOperator(operator, arguments);
+
+        // todo: why are the checks below done here and not in OperatorProcessor classes?
 
         /*
-         * Process Specific Validation. The Generic Processing is useless for PDFA validation
+         * Process Specific Validation. The Generic Processing is useless for PDF/A validation
          */
-        if ("BI".equals(operation))
+        if ("BI".equals(operator.getName()))
         {
             validImageFilter(operator);
             validImageColorSpace(operator);
         }
 
         checkShowTextOperators(operator, arguments);
-        checkColorOperators(operation);
+        checkColorOperators(operator.getName());
         validRenderingIntent(operator, arguments);
         checkSetColorSpaceOperators(operator, arguments);
         validNumberOfGraphicStates(operator);
+    }
+
+    @Override
+    protected void unsupportedOperator(Operator operator, List<COSBase> arguments)
+    {
+        registerError("The operator \"" + operator.getName() + "\" isn't supported.",
+                ERROR_SYNTAX_CONTENT_STREAM_UNSUPPORTED_OP);
     }
 
     /**
@@ -189,7 +179,7 @@ public class PreflightContentStream extends PreflightStreamEngine
     protected void checkShowTextOperators(Operator operator, List<?> arguments) throws ContentStreamException,
             IOException
     {
-        String op = operator.getOperation();
+        String op = operator.getName();
         if ("Tj".equals(op) || "'".equals(op) || "\"".equals(op))
         {
             validStringDefinition(operator, arguments);
@@ -218,11 +208,11 @@ public class PreflightContentStream extends PreflightStreamEngine
         /*
          * For a Text operator, the arguments list should contain only one COSString object
          */
-        if ("\"".equals(operator.getOperation()))
+        if ("\"".equals(operator.getName()))
         {
             if (arguments.size() != 3)
             {
-                registerError("Invalid argument for the operator : " + operator.getOperation(),
+                registerError("Invalid argument for the operator : " + operator.getName(),
                         ERROR_SYNTAX_CONTENT_STREAM_INVALID_ARGUMENT);
                 return;
             }
@@ -232,7 +222,7 @@ public class PreflightContentStream extends PreflightStreamEngine
             if (!(arg0 instanceof COSInteger || arg0 instanceof COSFloat)
                     || !(arg1 instanceof COSInteger || arg1 instanceof COSFloat))
             {
-                registerError("Invalid argument for the operator : " + operator.getOperation(),
+                registerError("Invalid argument for the operator : " + operator.getName(),
                         ERROR_SYNTAX_CONTENT_STREAM_INVALID_ARGUMENT);
                 return;
             }
@@ -243,9 +233,8 @@ public class PreflightContentStream extends PreflightStreamEngine
             }
             else
             {
-                registerError("Invalid argument for the operator : " + operator.getOperation(),
+                registerError("Invalid argument for the operator : " + operator.getName(),
                         ERROR_SYNTAX_CONTENT_STREAM_INVALID_ARGUMENT);
-                return;
             }
         }
         else
@@ -257,9 +246,8 @@ public class PreflightContentStream extends PreflightStreamEngine
             }
             else if (!(objStr instanceof COSInteger))
             {
-                registerError("Invalid argument for the operator : " + operator.getOperation(),
+                registerError("Invalid argument for the operator : " + operator.getName(),
                         ERROR_SYNTAX_CONTENT_STREAM_INVALID_ARGUMENT);
-                return;
             }
         }
     }
@@ -289,7 +277,7 @@ public class PreflightContentStream extends PreflightStreamEngine
             }
             else if (!(object instanceof COSInteger || object instanceof COSFloat))
             {
-                registerError("Invalid argument for the operator : " + operator.getOperation(),
+                registerError("Invalid argument for the operator : " + operator.getName(),
                         ERROR_SYNTAX_CONTENT_STREAM_INVALID_ARGUMENT);
                 return;
             }
@@ -311,7 +299,7 @@ public class PreflightContentStream extends PreflightStreamEngine
     {
         // TextSize accessible through the TextState
         PDTextState textState = getGraphicsState().getTextState();
-        final int renderingMode = textState.getRenderingMode();
+        final RenderingMode renderingMode = textState.getRenderingMode();
         final PDFont font = textState.getFont();
         if (font == null)
         {
@@ -321,7 +309,7 @@ public class PreflightContentStream extends PreflightStreamEngine
         }
 
         FontContainer fontContainer = context.getFontContainer(font.getCOSObject());
-        if (renderingMode == 3 && (fontContainer == null || !fontContainer.isEmbeddedFont()))
+        if (renderingMode == RenderingMode.NEITHER && (fontContainer == null || !fontContainer.isEmbeddedFont()))
         {
             // font not embedded and rendering mode is 3. Valid case and nothing to check
             return;
@@ -329,14 +317,14 @@ public class PreflightContentStream extends PreflightStreamEngine
         else if (fontContainer == null)
         {
             // Font Must be embedded if the RenderingMode isn't 3
-            registerError(font.getBaseFont() + " is unknown wasn't found by the FontHelperValdiator",
+            registerError(font.getName() + " is unknown wasn't found by the FontHelperValdiator",
                     ERROR_FONTS_UNKNOWN_FONT_REF);
             return;
         }
         else if (!fontContainer.isValid() && !fontContainer.errorsAleadyMerged())
         {
             context.addValidationErrors(fontContainer.getAllErrors());
-            fontContainer.setErrorsAleadyMerged(true);
+            fontContainer.setErrorsAlreadyMerged(true);
             return;
         }
         if (!fontContainer.isValid() && fontContainer.errorsAleadyMerged())
@@ -345,34 +333,24 @@ public class PreflightContentStream extends PreflightStreamEngine
             return;
         }
 
-        int codeLength = 1;
-        for (int i = 0; i < string.length; i += codeLength)
+        InputStream in = new ByteArrayInputStream(string);
+        while (in.available() > 0)
         {
-            // explore the string to detect character code (length can be 1 or 2 bytes)
-            int cid = -1;
-            codeLength = 1;
             try
             {
-                // according to the encoding, extract the character identifier
-                cid = font.encodeToCID(string, i, codeLength);
-                if (cid == -1 && i + 1 < string.length)
-                {
-                    // maybe a multibyte encoding
-                    codeLength++;
-                    cid = font.encodeToCID(string, i, codeLength);
-                }
-                fontContainer.checkGlyphWith(cid);
+                int code = font.readCode(in);
+                fontContainer.checkGlyphWidth(code);
             }
             catch (IOException e)
             {
-                registerError("Encoding can't interpret the character code", ERROR_FONTS_ENCODING_ERROR);
+                registerError("Encoding can't interpret the character code", ERROR_FONTS_ENCODING_ERROR, e);
                 return;
             }
             catch (GlyphException e)
             {
-                if (renderingMode != 3)
+                if (renderingMode != RenderingMode.NEITHER)
                 {
-                    registerError(e.getMessage(), e.getErrorCode());
+                    registerError(e.getMessage(), e.getErrorCode(), e);
                     return;
                 }
             }

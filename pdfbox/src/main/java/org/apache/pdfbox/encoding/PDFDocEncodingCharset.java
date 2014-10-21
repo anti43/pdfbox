@@ -24,10 +24,6 @@ import java.nio.charset.Charset;
  */
 public class PDFDocEncodingCharset extends SingleByteCharset
 {
-
-    /** Canonical name for the PDFDocEncoding. */
-    public static final String NAME = "PDFDocEncoding";
-
     /** Singleton instance. */
     public static final PDFDocEncodingCharset INSTANCE = new PDFDocEncodingCharset();
 
@@ -36,7 +32,7 @@ public class PDFDocEncodingCharset extends SingleByteCharset
      */
     public PDFDocEncodingCharset()
     {
-        super(NAME, null, createEncoding());
+        super("PDFDocEncoding", null, createEncoding());
     }
 
     private static char[] createEncoding()
@@ -44,7 +40,7 @@ public class PDFDocEncodingCharset extends SingleByteCharset
         char[] encoding = new char[256];
 
         //Initialize with basically ISO-8859-1
-        for (int i = 0; i < 255; i++)
+        for (int i = 0; i < 256; i++)
         {
             encoding[i] = (char)i;
         }

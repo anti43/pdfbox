@@ -40,7 +40,7 @@ import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotation;
 import org.apache.pdfbox.pdmodel.interactive.pagenavigation.PDThreadBead;
 
 /**
- * This represents a single page in a PDF document.
+ * A page in a PDF document.
  * 
  * @author Ben Litchfield
  */
@@ -50,8 +50,7 @@ public class PDPage implements COSObjectable
     private static final int DEFAULT_USER_SPACE_UNIT_DPI = 72;
     private static final float MM_TO_UNITS = 1 / (10 * 2.54f) * DEFAULT_USER_SPACE_UNIT_DPI;
 
-    private COSDictionary page;
-    private PDResources pageResources;
+    // todo: make the constants below an enum
 
     /**
      * A page size of LETTER or 8.5x11.
@@ -86,6 +85,10 @@ public class PDPage implements COSObjectable
      * A page size of A6 Paper.
      */
     public static final PDRectangle PAGE_SIZE_A6 = new PDRectangle(105 * MM_TO_UNITS, 148 * MM_TO_UNITS);
+
+    private final COSDictionary page;
+    private PDResources pageResources;
+    private PDRectangle mediaBox = null;
 
     /**
      * Creates a new instance of PDPage with a size of 8.5x11.
@@ -124,6 +127,7 @@ public class PDPage implements COSObjectable
      * 
      * @return The cos object that matches this Java object.
      */
+    @Override
     public COSBase getCOSObject()
     {
         return page;
@@ -285,8 +289,6 @@ public class PDPage implements COSObjectable
         }
         return mediaBox;
     }
-
-    private PDRectangle mediaBox = null;
 
     /**
      * This will find the MediaBox for this page by looking up the hierarchy until it finds them.
@@ -537,6 +539,62 @@ public class PDPage implements COSObjectable
             page.setItem(COSName.ART_BOX, artBox.getCOSArray());
         }
     }
+    
+    /**
+     * Calculate the adjusted crop box from the cropbox and the mediabox as
+     * required by the PDF spec. Use this instead of {@link #findCropBox()} 
+     * when drawing a page.
+     *
+     * @return the adjusted crop box.
+     */
+    public PDRectangle calcAdjustedCropBox()
+    {
+        PDRectangle adjustedCropBox = new PDRectangle();
+        
+        // "the region to which the contents of the page shall be clipped"
+        PDRectangle tmpCropBox = findCropBox();
+        
+        // "Content falling outside this boundary may safely be discarded"
+        PDRectangle tmpMediaBox = findMediaBox();
+        
+        // "The crop, bleed, trim, and art boxes shall not ordinarily extend
+        // beyond the boundaries of the media box. If they do, they are
+        // effectively reduced to their intersection with the media box.
+        if (tmpMediaBox.getLowerLeftX() > tmpCropBox.getLowerLeftX())
+        {
+            adjustedCropBox.setLowerLeftX(tmpMediaBox.getLowerLeftX());
+        }
+        else
+        {
+            adjustedCropBox.setLowerLeftX(tmpCropBox.getLowerLeftX());
+        }
+        if (tmpMediaBox.getLowerLeftY() > tmpCropBox.getLowerLeftY())
+        {
+            adjustedCropBox.setLowerLeftY(tmpMediaBox.getLowerLeftY());
+        }
+        else
+        {
+            adjustedCropBox.setLowerLeftY(tmpCropBox.getLowerLeftY());
+        }
+        if (tmpMediaBox.getUpperRightX() < tmpCropBox.getUpperRightX())
+        {
+            adjustedCropBox.setUpperRightX(tmpMediaBox.getUpperRightX());
+        }
+        else
+        {
+            adjustedCropBox.setUpperRightX(tmpCropBox.getUpperRightX());
+        }
+        if (tmpMediaBox.getUpperRightY() < tmpCropBox.getUpperRightY())
+        {
+            adjustedCropBox.setUpperRightY(tmpMediaBox.getUpperRightY());
+        }
+        else
+        {
+            adjustedCropBox.setUpperRightY(tmpCropBox.getUpperRightY());
+        }
+        
+        return adjustedCropBox;
+    }
 
     // todo BoxColorInfo
     // todo Contents
@@ -589,7 +647,7 @@ public class PDPage implements COSObjectable
     /**
      * This will set the rotation for this page.
      * 
-     * @param rotation The new rotation for this page.
+     * @param rotation The new rotation for this page in degrees.
      */
     public void setRotation(int rotation)
     {
@@ -762,16 +820,5 @@ public class PDPage implements COSObjectable
     public int hashCode()
     {
         return this.getCOSDictionary().hashCode();
-    }
-    
-    /**
-     * Calling this will release all cached information.
-     */
-    public void clearCache()
-    {
-        if (pageResources != null)
-        {
-            pageResources.clearCache();
-        }
     }
 }

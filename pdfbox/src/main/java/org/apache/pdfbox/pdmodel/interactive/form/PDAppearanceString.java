@@ -51,7 +51,7 @@ import org.apache.pdfbox.pdmodel.interactive.annotation.PDAppearanceDictionary;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAppearanceStream;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationWidget;
 
-import org.apache.pdfbox.util.operator.Operator;
+import org.apache.pdfbox.contentstream.operator.Operator;
 
 /**
  * A default appearance string contains any graphics state or text state operators needed to
@@ -79,7 +79,7 @@ public final class PDAppearanceString
      * @param field the field which you wish to control the appearance of
      * @throws IOException If there is an error creating the appearance.
      */
-    public PDAppearanceString(PDAcroForm theAcroForm, PDVariableText field) throws IOException
+    public PDAppearanceString(PDAcroForm theAcroForm, PDVariableText field)
     {
         acroForm = theAcroForm;
         parent = field;
@@ -90,10 +90,7 @@ public final class PDAppearanceString
             widgets = new ArrayList<COSObjectable>();
             widgets.add( field.getWidget() );
         }
-
         defaultAppearance = getDefaultAppearance();
-
-
     }
 
     /**
@@ -145,9 +142,9 @@ public final class PDAppearanceString
      *
      * @return The tokens in the original appearance stream
      */
-    private List getStreamTokens( PDAppearanceStream appearanceStream ) throws IOException
+    private List<Object> getStreamTokens( PDAppearanceStream appearanceStream ) throws IOException
     {
-        List tokens = null;
+        List<Object> tokens = new ArrayList<Object>();
         if( appearanceStream != null )
         {
             tokens = getStreamTokens( appearanceStream.getStream() );
@@ -155,26 +152,26 @@ public final class PDAppearanceString
         return tokens;
     }
 
-    private List getStreamTokens( COSString string ) throws IOException
+    private List<Object> getStreamTokens( COSString string ) throws IOException
     {
         PDFStreamParser parser;
 
-        List tokens = null;
+        List<Object> tokens =  new ArrayList<Object>();
         if( string != null )
         {
             ByteArrayInputStream stream = new ByteArrayInputStream( string.getBytes() );
-            parser = new PDFStreamParser( stream, acroForm.getDocument().getDocument().getScratchFile() );
+            parser = new PDFStreamParser( stream );
             parser.parse();
             tokens = parser.getTokens();
         }
         return tokens;
     }
 
-    private List getStreamTokens( COSStream stream ) throws IOException
+    private List<Object> getStreamTokens( COSStream stream ) throws IOException
     {
         PDFStreamParser parser;
 
-        List tokens = null;
+        List<Object> tokens = new ArrayList<Object>();
         if( stream != null )
         {
             parser = new PDFStreamParser( stream );
@@ -186,18 +183,20 @@ public final class PDAppearanceString
 
     /**
      * Tests if the apperance stream already contains content.
+     * 
+     * @param streamTokens individual tokens within the appearance stream
      *
      * @return true if it contains any content
      */
-    private boolean containsMarkedContent( List stream )
+    private boolean containsMarkedContent( List<Object> streamTokens )
     {
-        return stream.contains( Operator.getOperator("BMC") );
+        return streamTokens.contains( Operator.getOperator("BMC") );
     }
 
     /**
      * This is the public method for setting the appearance stream.
      *
-     * @param apValue the String value which the apperance shoud represent
+     * @param apValue the String value which the appearance should represent
      *
      * @throws IOException If there is an error creating the stream.
      */
@@ -241,8 +240,8 @@ public final class PDAppearanceString
                     widget.setAppearance( appearance );
                 }
 
-                Map normalAppearance = appearance.getNormalAppearance();
-                PDAppearanceStream appearanceStream = (PDAppearanceStream)normalAppearance.get( "default" );
+                Map<String,PDAppearanceStream> normalAppearance = appearance.getNormalAppearance();
+                PDAppearanceStream appearanceStream = normalAppearance.get( "default" );
                 if( appearanceStream == null )
                 {
                     COSStream cosStream = acroForm.getDocument().getDocument().createCOSStream();
@@ -251,8 +250,8 @@ public final class PDAppearanceString
                     appearance.setNormalAppearance( appearanceStream );
                 }
 
-                List tokens = getStreamTokens( appearanceStream );
-                List daTokens = getStreamTokens( getDefaultAppearance() );
+                List<Object> tokens = getStreamTokens( appearanceStream );
+                List<Object> daTokens = getStreamTokens( getDefaultAppearance() );
                 PDFont pdFont = getFontAndUpdateResources( tokens, appearanceStream );
 
                 if (!containsMarkedContent( tokens ))
@@ -339,7 +338,7 @@ public final class PDAppearanceString
     }
 
     private void insertGeneratedAppearance( PDAnnotationWidget fieldWidget, OutputStream output,
-        PDFont pdFont, List tokens, PDAppearanceStream appearanceStream ) throws IOException
+        PDFont pdFont, List<Object> tokens, PDAppearanceStream appearanceStream ) throws IOException
     {
         PrintWriter printWriter = new PrintWriter( output, true );
         float fontSize = 0.0f;
@@ -352,7 +351,7 @@ public final class PDAppearanceString
         if( defaultAppearance != null )
         {
             String daString = defaultAppearance.getString();
-            PDFStreamParser daParser = new PDFStreamParser(new ByteArrayInputStream( daString.getBytes("ISO-8859-1") ), null );
+            PDFStreamParser daParser = new PDFStreamParser(new ByteArrayInputStream( daString.getBytes("ISO-8859-1") ) );
             daParser.parse();
             List<Object> daTokens = daParser.getTokens();
             fontSize = calculateFontSize( pdFont, boundingBox, tokens, daTokens );
@@ -407,7 +406,7 @@ public final class PDAppearanceString
         printWriter.flush();
     }
 
-    private PDFont getFontAndUpdateResources( List tokens, PDAppearanceStream appearanceStream ) throws IOException
+    private PDFont getFontAndUpdateResources( List<Object> tokens, PDAppearanceStream appearanceStream ) throws IOException
     {
         PDFont retval = null;
         PDResources streamResources = appearanceStream.getResources();
@@ -425,19 +424,18 @@ public final class PDAppearanceString
             {
                 String data = da.getString();
                 PDFStreamParser streamParser = new PDFStreamParser(
-                        new ByteArrayInputStream( data.getBytes("ISO-8859-1") ), null );
+                        new ByteArrayInputStream( data.getBytes("ISO-8859-1") ) );
                 streamParser.parse();
                 tokens = streamParser.getTokens();
             }
 
             int setFontIndex = tokens.indexOf( Operator.getOperator("Tf"));
             COSName cosFontName = (COSName)tokens.get( setFontIndex-2 );
-            String fontName = cosFontName.getName();
-            retval = (PDFont)streamResources.getFonts().get( fontName );
+            retval = streamResources.getFont( cosFontName );
             if( retval == null )
             {
-                retval = (PDFont)formResources.getFonts().get( fontName );
-                streamResources.addFont(retval, fontName);
+                retval = formResources.getFont( cosFontName );
+                streamResources.put(cosFontName, retval);
             }
         }
         return retval;
@@ -465,7 +463,7 @@ public final class PDAppearanceString
      * w in an appearance stream represents the lineWidth.
      * @return the linewidth
      */
-    private float getLineWidth( List tokens )
+    private float getLineWidth( List<Object> tokens )
     {
 
         float retval = 1;
@@ -482,7 +480,7 @@ public final class PDAppearanceString
         return retval;
     }
 
-    private PDRectangle getSmallestDrawnRectangle( PDRectangle boundingBox, List tokens )
+    private PDRectangle getSmallestDrawnRectangle( PDRectangle boundingBox, List<Object> tokens )
     {
         PDRectangle smallest = boundingBox;
         for( int i=0; i<tokens.size(); i++ )
@@ -518,14 +516,13 @@ public final class PDAppearanceString
      *
      * @throws IOException If there is an error getting the font height.
      */
-    private float calculateFontSize( PDFont pdFont, PDRectangle boundingBox, List tokens, List daTokens )
+    private float calculateFontSize( PDFont pdFont, PDRectangle boundingBox, List<Object> tokens, List<Object> daTokens )
         throws IOException
     {
         float fontSize = 0;
         if( daTokens != null )
         {
             //daString looks like   "BMC /Helv 3.4 Tf EMC"
-
             int fontIndex = daTokens.indexOf( Operator.getOperator("Tf") );
             if(fontIndex != -1 )
             {
@@ -574,7 +571,7 @@ public final class PDAppearanceString
      *
      * @throws IOException If there is an error calculating the text position.
      */
-    private String getTextPosition( PDRectangle boundingBox, PDFont pdFont, float fontSize, List tokens )
+    private String getTextPosition( PDRectangle boundingBox, PDFont pdFont, float fontSize, List<Object> tokens )
         throws IOException
     {
         float lineWidth = getLineWidth( tokens );

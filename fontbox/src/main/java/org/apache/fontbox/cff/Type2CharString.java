@@ -34,21 +34,24 @@ public class Type2CharString extends Type1CharString
     private int defWidthX = 0;
     private int nominalWidthX = 0;
     private int pathCount = 0;
-    private List<Object> type2sequence;
+    private final List<Object> type2sequence;
+    private final int gid;
 
     /**
      * Constructor.
-     * @param reader Parent CFF font
+     * @param font Parent CFF font
      * @param fontName font name
-     * @param glyphName glyph name
+     * @param glyphName glyph name (or CID as hex string)
+     * @param gid GID
      * @param sequence Type 2 char string sequence
      * @param defaultWidthX default width
      * @param nomWidthX nominal width
      */
-    public Type2CharString(Type1CharStringReader reader, String fontName, String glyphName, List<Object> sequence,
+    public Type2CharString(Type1CharStringReader font, String fontName, String glyphName, int gid, List<Object> sequence,
                            int defaultWidthX, int nomWidthX)
     {
-        super(reader, fontName, glyphName);
+        super(font, fontName, glyphName);
+        this.gid = gid;
         type2sequence = sequence;
         defWidthX = defaultWidthX;
         nominalWidthX = nomWidthX;
@@ -56,8 +59,15 @@ public class Type2CharString extends Type1CharString
     }
 
     /**
-     * Returns the advance width of the glyph.
-     * @return the width
+     * Return the GID (glyph id) of this charstring.
+     */
+    public int getGID()
+    {
+        return gid;
+    }
+
+    /**
+     * Returns the advance width of this glyph.
      */
     public int getWidth()
     {
@@ -73,8 +83,7 @@ public class Type2CharString extends Type1CharString
     }
 
     /**
-     * Returns the Type 2 char string sequence.
-     * @return the Type 2 sequence
+     * Returns the Type 2 charstring sequence.
      */
     public List<Object> getType2Sequence()
     {
@@ -101,6 +110,7 @@ public class Type2CharString extends Type1CharString
     @SuppressWarnings(value = { "unchecked" })
     private List<Integer> handleCommand(List<Integer> numbers, CharStringCommand command)
     {
+        commandCount++;
         String name = CharStringCommand.TYPE2_VOCABULARY.get(command.getKey());
 
         if ("hstem".equals(name))
@@ -137,7 +147,7 @@ public class Type2CharString extends Type1CharString
         }
         else if ("endchar".equals(name))
         {
-            numbers = clearStack(numbers, numbers.size() == 5);
+            numbers = clearStack(numbers, numbers.size() == 5 || numbers.size() == 1);
             closePath();
             if (numbers.size() == 4)
             {
@@ -204,8 +214,8 @@ public class Type2CharString extends Type1CharString
             }
             List<Integer> first = numbers.subList(0, 6);
             List<Integer> second = Arrays.asList(numbers.get(6), numbers.get(7), numbers.get(8), 
-                    numbers.get(9), (Math.abs(dx) > Math.abs(dy) ? numbers.get(10) : Integer.valueOf(-dx)), 
-                    (Math.abs(dx) > Math.abs(dy) ? Integer.valueOf(-dy) : numbers.get(10)));
+                    numbers.get(9), (Math.abs(dx) > Math.abs(dy) ? numbers.get(10) : -dx), 
+                    (Math.abs(dx) > Math.abs(dy) ? -dy : numbers.get(10)));
             addCommandList(Arrays.asList(first, second), new CharStringCommand(8));
         }
         else if ("hstemhm".equals(name))
@@ -322,14 +332,14 @@ public class Type2CharString extends Type1CharString
             {
                 addCommand(Arrays.asList(numbers.get(0), 0,
                         numbers.get(1), numbers.get(2), last ? numbers.get(4)
-                                : Integer.valueOf(0), numbers.get(3)),
+                                : 0, numbers.get(3)),
                         new CharStringCommand(8));
             } 
             else
             {
                 addCommand(Arrays.asList(0, numbers.get(0),
                         numbers.get(1), numbers.get(2), numbers.get(3),
-                        last ? numbers.get(4) : Integer.valueOf(0)),
+                        last ? numbers.get(4) : 0),
                         new CharStringCommand(8));
             }
             numbers = numbers.subList(last ? 5 : 4, numbers.size());
@@ -346,15 +356,14 @@ public class Type2CharString extends Type1CharString
             if (horizontal)
             {
                 addCommand(Arrays.asList(numbers.get(first ? 1 : 0),
-                        first ? numbers.get(0) : Integer.valueOf(0), numbers
+                        first ? numbers.get(0) : 0, numbers
                                 .get(first ? 2 : 1),
                         numbers.get(first ? 3 : 2), numbers.get(first ? 4 : 3),
                         0), new CharStringCommand(8));
             } 
             else
             {
-                addCommand(Arrays.asList(first ? numbers.get(0) : Integer
-                        .valueOf(0), numbers.get(first ? 1 : 0), numbers
+                addCommand(Arrays.asList(first ? numbers.get(0) : 0, numbers.get(first ? 1 : 0), numbers
                         .get(first ? 2 : 1), numbers.get(first ? 3 : 2),
                         0, numbers.get(first ? 4 : 3)),
                         new CharStringCommand(8));

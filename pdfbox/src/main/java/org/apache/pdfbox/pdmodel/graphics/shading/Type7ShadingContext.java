@@ -13,51 +13,47 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.pdfbox.pdmodel.graphics.shading;
 
+import java.awt.Rectangle;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Point2D;
 import java.awt.image.ColorModel;
 import java.io.IOException;
 import java.util.ArrayList;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.pdmodel.common.PDRange;
 import org.apache.pdfbox.util.Matrix;
 
 /**
- * AWT PaintContext for tensor-product patch meshes (type 7) shading.
- * This was done as part of GSoC2014, Tilman Hausherr is the mentor.
+ * AWT PaintContext for tensor-product patch meshes (type 7) shading. This was
+ * done as part of GSoC2014, Tilman Hausherr is the mentor.
+ *
  * @author Shaola Ren
  */
 class Type7ShadingContext extends PatchMeshesShadingContext
 {
-    private static final Log LOG = LogFactory.getLog(Type7ShadingContext.class);
-    
+
     /**
      * Constructor creates an instance to be used for fill operations.
+     *
      * @param shading the shading type to be used
      * @param colorModel the color model to be used
      * @param xform transformation for user to device space
      * @param ctm current transformation matrix
-     * @param pageHeight height of the current page
+     * @param dBounds device bounds
      * @throws IOException if something went wrong
      */
     public Type7ShadingContext(PDShadingType7 shading, ColorModel colorModel, AffineTransform xform,
-                                Matrix ctm, int pageHeight) throws IOException
+            Matrix ctm, Rectangle dBounds) throws IOException
     {
-        super(shading, colorModel, xform, ctm, pageHeight);
-        bitsPerColorComponent = shading.getBitsPerComponent();
-        bitsPerCoordinate = shading.getBitsPerCoordinate();
-        bitsPerFlag = shading.getBitsPerFlag();
+        super(shading, colorModel, xform, ctm, dBounds);
         patchList = getTensorPatchList(xform, ctm);
         pixelTable = calcPixelTable();
     }
-    
+
     // get the patch list which forms the type 7 shading image from data stream
-    private ArrayList<Patch> getTensorPatchList(AffineTransform xform,Matrix ctm) throws IOException
+    private ArrayList<Patch> getTensorPatchList(AffineTransform xform, Matrix ctm) throws IOException
     {
         PDShadingType7 tensorShadingType = (PDShadingType7) patchMeshesShadingType;
         COSDictionary cosDictionary = tensorShadingType.getCOSDictionary();
@@ -70,16 +66,11 @@ class Type7ShadingContext extends PatchMeshesShadingContext
         }
         return getPatchList(xform, ctm, cosDictionary, rangeX, rangeY, colRange, 16);
     }
-    
+
     @Override
     protected Patch generatePatch(Point2D[] points, float[][] color)
     {
         return new TensorPatch(points, color);
     }
-    
-    @Override
-    public void dispose()
-    {
-        super.dispose();
-    }
+
 }

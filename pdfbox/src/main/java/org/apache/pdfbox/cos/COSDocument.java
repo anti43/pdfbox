@@ -28,10 +28,6 @@ import java.util.Map;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.pdfbox.io.RandomAccess;
-import org.apache.pdfbox.io.RandomAccessBuffer;
-import org.apache.pdfbox.io.RandomAccessFile;
-import org.apache.pdfbox.pdfparser.NonSequentialPDFParser;
 import org.apache.pdfbox.pdfparser.PDFObjectStreamParser;
 import org.apache.pdfbox.pdmodel.interactive.digitalsignature.SignatureInterface;
 import org.apache.pdfbox.persistence.util.COSObjectKey;
@@ -40,7 +36,7 @@ import org.apache.pdfbox.persistence.util.COSObjectKey;
  * This is the in-memory representation of the PDF document.  You need to call
  * close() on this object when you are done using it!!
  *
- * @author <a href="ben@benlitchfield.com">Ben Litchfield</a>
+ * @author Ben Litchfield
  * 
  */
 public class COSDocument extends COSBase implements Closeable
@@ -76,13 +72,6 @@ public class COSDocument extends COSBase implements Closeable
      */
     private SignatureInterface signatureInterface;
 
-    /**
-     * This file will store the streams in order to conserve memory.
-     */
-    private final RandomAccess scratchFile;
-
-    private final File tmpFile;
-
     private String headerString = "%PDF-" + version;
 
     private boolean warnMissingClose = true;
@@ -96,26 +85,37 @@ public class COSDocument extends COSBase implements Closeable
 
     private boolean isXRefStream;
     
+    private final File scratchDirectory;
+    
+    private final boolean useScratchFile;
+    
     /**
      * Flag to skip malformed or otherwise unparseable input where possible.
      */
     private final boolean forceParsing;
 
     /**
-     * Constructor that will use the given random access file for storage
-     * of the PDF streams. The client of this method is responsible for
-     * deleting the storage if necessary that this file will write to. The
-     * close method will close the file though.
+     * Constructor.
      *
-     * @param scratchFileValue the random access file to use for storage
      * @param forceParsingValue flag to skip malformed or otherwise unparseable
      *                     document content where possible
      */
-    public COSDocument(RandomAccess scratchFileValue, boolean forceParsingValue) 
+    public COSDocument(boolean forceParsingValue) 
     {
-        scratchFile = scratchFileValue;
-        tmpFile = null;
-        forceParsing = forceParsingValue;
+        this(null, forceParsingValue, false);
+    }
+
+    /**
+     * Constructor.
+     *
+     * @param forceParsingValue flag to skip malformed or otherwise unparseable
+     *                     document content where possible
+     * @param useScratchFiles enables the usage of a scratch file if set to true
+     *                     
+     */
+    public COSDocument(boolean forceParsingValue, boolean useScratchFiles) 
+    {
+        this(null, forceParsingValue, useScratchFiles);
     }
 
     /**
@@ -127,82 +127,36 @@ public class COSDocument extends COSBase implements Closeable
      *                   or <code>null</code> to use the system default
      * @param forceParsingValue flag to skip malformed or otherwise unparseable
      *                     document content where possible
-     * @throws IOException if something went wrong
+     * @param useScratchFiles enables the usage of a scratch file if set to true
+     * 
      */
-    public COSDocument(File scratchDir, boolean forceParsingValue) throws IOException 
+    public COSDocument(File scratchDir, boolean forceParsingValue, boolean useScratchFiles) 
     {
-        tmpFile = File.createTempFile("pdfbox-", ".tmp", scratchDir);
-        scratchFile = new RandomAccessFile(tmpFile, "rw");
         forceParsing = forceParsingValue;
+        scratchDirectory = scratchDir;
+        useScratchFile = useScratchFiles;
     }
 
     /**
-     * Constructor.  Uses memory to store stream.
+     * Constructor. Uses memory to store stream.
      */
     public COSDocument()
     {
-        this(new RandomAccessBuffer(), false);
+        this(false, false);
     }
 
     /**
-     * Constructor that will create a create a scratch file in the
-     * following directory.
-     *
-     * @param scratchDir The directory to store a scratch file.
-     *
-     * @throws IOException If there is an error creating the tmp file.
-     */
-    public COSDocument(File scratchDir) throws IOException 
-    {
-        this(scratchDir, false);
-    }
-
-    /**
-     * Constructor that will use the following random access file for storage
-     * of the PDF streams.  The client of this method is responsible for deleting
-     * the storage if necessary that this file will write to.  The close method
-     * will close the file though.
-     *
-     * @param file The random access file to use for storage.
-     */
-    public COSDocument(RandomAccess file) 
-    {
-        this(file, false);
-    }
-
-    /**
-     * This will get the scratch file for this document.
-     *
-     * @return The scratch file.
-     * 
-     * 
-     */
-    public RandomAccess getScratchFile()
-    {
-        // TODO the direct access to the scratch file should be removed.
-        if (!closed)
-        {
-            return scratchFile;
-        }
-        else
-        {
-            LOG.error("Can't access the scratch file as it is already closed!");
-            return null;
-        }
-    }
-
-    /**
-     * Create a new COSStream using the underlying scratch file.
+     * Creates a new COSStream using the current configuration for scratch files.
      * 
      * @return the new COSStream
      */
     public COSStream createCOSStream()
     {
-        return new COSStream( getScratchFile() );
+        return new COSStream( useScratchFile, scratchDirectory);
     }
 
     /**
-     * Create a new COSStream using the underlying scratch file.
+     * Creates a new COSStream using the current configuration for scratch files.
      *
      * @param dictionary the corresponding dictionary
      * 
@@ -210,20 +164,7 @@ public class COSDocument extends COSBase implements Closeable
      */
     public COSStream createCOSStream(COSDictionary dictionary)
     {
-        return new COSStream( dictionary, getScratchFile() );
-    }
-
-    /**
-     * This will get the first dictionary object by type.
-     *
-     * @param type The type of the object.
-     *
-     * @return This will return an object with the specified type.
-     * @throws IOException If there is an error getting the object
-     */
-    public COSObject getObjectByType( String type ) throws IOException
-    {
-        return getObjectByType( COSName.getPDFName( type ) );
+        return new COSStream( dictionary, useScratchFile, scratchDirectory );
     }
 
     /**
@@ -577,15 +518,10 @@ public class COSDocument extends COSBase implements Closeable
     {
         if (!closed) 
         {
-            scratchFile.close();
-            if (tmpFile != null) 
-            {
-                tmpFile.delete();
-            }
             if (trailer != null)
             {
-            	trailer.clear();
-            	trailer = null;
+                trailer.clear();
+                trailer = null;
             }
             // Clear object pool
             List<COSObject> list = getObjects();
@@ -597,15 +533,15 @@ public class COSDocument extends COSBase implements Closeable
                     // clear the resources of the pooled objects
                     if (cosObject instanceof COSStream)
                     {
-                    	((COSStream)cosObject).close();
+                        ((COSStream)cosObject).close();
                     }
                     else if (cosObject instanceof COSDictionary)
                     {
-                    	((COSDictionary)cosObject).clear();
+                        ((COSDictionary)cosObject).clear();
                     }
                     else if (cosObject instanceof COSArray)
                     {
-                    	((COSArray)cosObject).clear();
+                        ((COSArray)cosObject).clear();
                     }
                     // TODO are there other kind of COSObjects to be cleared?
                 }

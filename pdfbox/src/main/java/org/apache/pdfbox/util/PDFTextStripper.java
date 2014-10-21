@@ -19,6 +19,7 @@ package org.apache.pdfbox.util;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.io.Writer;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -26,7 +27,6 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import java.util.SortedMap;
 import java.util.SortedSet;
 import java.util.TreeMap;
@@ -34,6 +34,7 @@ import java.util.TreeSet;
 import java.util.Vector;
 import java.util.regex.Pattern;
 
+import org.apache.pdfbox.contentstream.PDFTextStreamEngine;
 import org.apache.pdfbox.cos.COSStream;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -44,8 +45,6 @@ import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
 import org.apache.pdfbox.pdmodel.encryption.StandardDecryptionMaterial;
 import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineItem;
 import org.apache.pdfbox.pdmodel.interactive.pagenavigation.PDThreadBead;
-import org.apache.pdfbox.text.PositionWrapper;
-import org.apache.pdfbox.text.TextNormalize;
 import org.apache.pdfbox.text.TextPosition;
 import org.apache.pdfbox.text.TextPositionComparator;
 
@@ -65,6 +64,8 @@ public class PDFTextStripper extends PDFTextStreamEngine
     private static float DEFAULT_INDENT_THRESHOLD = 2.0f;
     private static float DEFAULT_DROP_THRESHOLD = 2.5f;
 
+    private static final boolean useCustomQuicksort;
+    
     // enable the ability to set the default indent/drop thresholds
     // with -D system properties:
     //    pdftextstripper.indent
@@ -107,6 +108,24 @@ public class PDFTextStripper extends PDFTextStreamEngine
                 // ignore and use default
             }
         }
+        
+        // check if we need to use the custom quicksort algorithm as a 
+        // workaround to the transitivity issue of TextPositionComparator:
+        // https://issues.apache.org/jira/browse/PDFBOX-1512
+        boolean is16orLess = false;
+        try
+        {
+            String[] versionComponents = System.getProperty("java.version").split("\\.");
+            int javaMajorVersion = Integer.parseInt(versionComponents[0]);
+            int javaMinorVersion = Integer.parseInt(versionComponents[1]);
+            is16orLess = javaMajorVersion == 1 && javaMinorVersion <= 6;
+        }
+        catch (SecurityException x)
+        {
+            // when run in an applet ignore and use default
+            // assume 1.7 or higher so that quicksort is used
+        }
+        useCustomQuicksort = !is16orLess;
     }
 
     /**
@@ -164,15 +183,8 @@ public class PDFTextStripper extends PDFTextStreamEngine
     private Map<String, TreeMap<Float, TreeSet<Float>>> characterListMapping =
         new HashMap<String, TreeMap<Float, TreeSet<Float>>>();
 
-    protected String outputEncoding;
     protected PDDocument document;
     protected Writer output;
-
-    /**
-     * The normalizer is used to remove text ligatures/presentation forms
-     * and to correct the direction of right to left text, such as Arabic and Hebrew.
-     */
-    private TextNormalize normalize = null;
 
     /**
      * True if we started a paragraph but haven't ended it yet.
@@ -180,51 +192,12 @@ public class PDFTextStripper extends PDFTextStreamEngine
     private boolean inParagraph;
 
     /**
-     * Instantiate a new PDFTextStripper object. This object will load
-     * properties from PDFTextStripper.properties and will not do
-     * anything special to convert the text to a more encoding-specific output.
+     * Instantiate a new PDFTextStripper object.
      *
      * @throws IOException If there is an error loading the properties.
      */
     public PDFTextStripper() throws IOException
     {
-        super(ResourceLoader.loadProperties(
-                "org/apache/pdfbox/resources/PDFTextStripper.properties", true));
-        this.outputEncoding = null;
-        normalize = new TextNormalize(this.outputEncoding);
-    }
-
-    /**
-     * Instantiate a new PDFTextStripper object.  Loading all of the operator mappings
-     * from the properties object that is passed in.  Does not convert the text
-     * to more encoding-specific output.
-     *
-     * @param props The properties containing the mapping of operators to PDFOperator
-     * classes.
-     *
-     * @throws IOException If there is an error reading the properties.
-     */
-    public PDFTextStripper(Properties props) throws IOException
-    {
-        super(props);
-        this.outputEncoding = null;
-        normalize = new TextNormalize(this.outputEncoding);
-    }
-
-    /**
-     * Instantiate a new PDFTextStripper object. This object will load
-     * properties from PDFTextStripper.properties and will apply
-     * encoding-specific conversions to the output text.
-     *
-     * @param encoding The encoding that the output will be written in.
-     * @throws IOException If there is an error reading the properties.
-     */
-    public PDFTextStripper(String encoding) throws IOException
-    {
-        super(ResourceLoader.loadProperties(
-                "org/apache/pdfbox/resources/PDFTextStripper.properties", true));
-        this.outputEncoding = encoding;
-        normalize = new TextNormalize(this.outputEncoding);
     }
 
     /**
@@ -521,7 +494,18 @@ public class PDFTextStripper extends PDFTextStreamEngine
             if (getSortByPosition())
             {
                 TextPositionComparator comparator = new TextPositionComparator();
-                Collections.sort(textList, comparator);
+                				
+                // because the TextPositionComparator is not transitive, but 
+                // JDK7+ enforces transitivity on comparators, we need to use
+                // a custom quicksort implementation (which is slower, unfortunately).
+                if(useCustomQuicksort) 
+                {
+                	QuickSort.sort( textList, comparator );
+                } 
+                else 
+                {
+                	Collections.sort( textList, comparator );
+                }
             }
             Iterator<TextPosition> textIter = textList.iterator();
             // Before we can display the text, we need to do some normalizing.
@@ -973,13 +957,13 @@ public class PDFTextStripper extends PDFTextStreamEngine
                 TextPosition previousTextPosition = textList.get(textList.size() - 1);
                 if (text.isDiacritic() && previousTextPosition.contains(text))
                 {
-                    previousTextPosition.mergeDiacritic(text, normalize);
+                    previousTextPosition.mergeDiacritic(text);
                 }
                 // If the previous TextPosition was the diacritic, merge it into this
                 // one and remove it from the list.
                 else if (previousTextPosition.isDiacritic() && text.contains(previousTextPosition))
                 {
-                    text.mergeDiacritic(previousTextPosition, normalize);
+                    text.mergeDiacritic(previousTextPosition);
                     textList.remove(textList.size()-1);
                     textList.add(text);
                 }
@@ -1822,7 +1806,61 @@ public class PDFTextStripper extends PDFTextStreamEngine
      */
     private WordWithTextPositions createWord(String word, List<TextPosition> wordPositions)
     {
-        return new WordWithTextPositions(normalize.normalizePresentationForm(word), wordPositions);
+        return new WordWithTextPositions(normalizeWord(word), wordPositions);
+    }
+
+    /**
+     * Normalize certain Unicode characters. For example, convert the
+     * single "fi" ligature to "f" and "i". Also normalises Arabic and Hebrew presentation forms.
+     *
+     * @param word Word to normalize
+     * @return Normalized word
+     */
+    private String normalizeWord(String word)
+    {
+        StringBuilder builder = null;
+        int p = 0;
+        int q = 0;
+        int strLength = word.length();
+        for (; q < strLength; q++)
+        {
+            // We only normalize if the codepoint is in a given range.
+            // Otherwise, NFKC converts too many things that would cause
+            // confusion. For example, it converts the micro symbol in
+            // extended Latin to the value in the Greek script. We normalize
+            // the Unicode Alphabetic and Arabic A&B Presentation forms.
+            char c = word.charAt(q);
+            if (0xFB00 <= c && c <= 0xFDFF || 0xFE70 <= c && c <= 0xFEFF)
+            {
+                if (builder == null)
+                {
+                    builder = new StringBuilder(strLength * 2);
+                }
+                builder.append(word.substring(p, q));
+                // Some fonts map U+FDF2 differently than the Unicode spec.
+                // They add an extra U+0627 character to compensate.
+                // This removes the extra character for those fonts.
+                if(c == 0xFDF2 && q > 0 && (word.charAt(q-1) == 0x0627 || word.charAt(q-1) == 0xFE8D))
+                {
+                    builder.append("\u0644\u0644\u0647");
+                }
+                else
+                {
+                    // Trim because some decompositions have an extra space, such as U+FC5E
+                    builder.append(Normalizer.normalize(word.substring(q, q + 1), Normalizer.Form.NFKC).trim());
+                }
+                p = q + 1;
+            }
+        }
+        if (builder == null)
+        {
+            return word;
+        }
+        else
+        {
+            builder.append(word.substring(p, q));
+            return builder.toString();
+        }
     }
 
     /**
@@ -1909,6 +1947,115 @@ public class PDFTextStripper extends PDFTextStreamEngine
         public List<TextPosition> getTextPositions()
         {
             return textPositions;
+        }
+    }
+
+    /**
+     * wrapper of TextPosition that adds flags to track
+     * status as linestart and paragraph start positions.
+     * <p>
+     * This is implemented as a wrapper since the TextPosition
+     * class doesn't provide complete access to its
+     * state fields to subclasses.  Also, conceptually TextPosition is
+     * immutable while these flags need to be set post-creation so
+     * it makes sense to put these flags in this separate class.
+     * </p>
+     * @author m.martinez@ll.mit.edu
+     */
+    private static final class PositionWrapper
+    {
+        private boolean isLineStart = false;
+        private boolean isParagraphStart = false;
+        private boolean isPageBreak = false;
+        private boolean isHangingIndent = false;
+        private boolean isArticleStart = false;
+
+        private TextPosition position = null;
+
+        /**
+         * Returns the underlying TextPosition object.
+         * @return the text position
+         */
+        public TextPosition getTextPosition()
+        {
+            return position;
+        }
+
+        public boolean isLineStart()
+        {
+            return isLineStart;
+        }
+
+        /**
+         * Sets the isLineStart() flag to true.
+         */
+        public void setLineStart()
+        {
+            this.isLineStart = true;
+        }
+
+
+        public boolean isParagraphStart()
+        {
+            return isParagraphStart;
+        }
+
+        /**
+         * sets the isParagraphStart() flag to true.
+         */
+        public void setParagraphStart()
+        {
+            this.isParagraphStart = true;
+        }
+
+
+        public boolean isArticleStart()
+        {
+            return isArticleStart;
+        }
+
+
+        /**
+         * Sets the isArticleStart() flag to true.
+         */
+        public void setArticleStart()
+        {
+            this.isArticleStart = true;
+        }
+
+        public boolean isPageBreak()
+        {
+            return isPageBreak;
+        }
+
+        /**
+         * Sets the isPageBreak() flag to true.
+         */
+        public void setPageBreak()
+        {
+            this.isPageBreak = true;
+        }
+
+        public boolean isHangingIndent()
+        {
+            return isHangingIndent;
+        }
+
+        /**
+         * Sets the isHangingIndent() flag to true.
+         */
+        public void setHangingIndent()
+        {
+            this.isHangingIndent = true;
+        }
+
+        /**
+         * Constructs a PositionWrapper around the specified TextPosition object.
+         * @param position the text position
+         */
+        public PositionWrapper(TextPosition position)
+        {
+            this.position = position;
         }
     }
 }

@@ -18,6 +18,7 @@ package org.apache.pdfbox.util;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -40,6 +41,7 @@ import org.apache.pdfbox.pdmodel.PDDocumentCatalog;
 import org.apache.pdfbox.pdmodel.PDDocumentInformation;
 import org.apache.pdfbox.pdmodel.PDDocumentNameDictionary;
 import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.common.COSArrayList;
 import org.apache.pdfbox.pdmodel.common.PDNumberTreeNode;
 import org.apache.pdfbox.pdmodel.common.PDStream;
@@ -49,8 +51,7 @@ import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotation;
 import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDDocumentOutline;
 import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineItem;
 import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm;
-import org.apache.pdfbox.pdmodel.interactive.form.PDField;
-import org.apache.pdfbox.pdmodel.interactive.form.PDFieldFactory;
+import org.apache.pdfbox.pdmodel.interactive.form.PDFieldTreeNode;
 
 /**
  * This class will take a list of pdf documents and merge them, saving the
@@ -63,7 +64,7 @@ public class PDFMergerUtility
 {
     private static final String STRUCTURETYPE_DOCUMENT = "Document";
 
-    private List<InputStream> sources;
+    private final List<InputStream> sources;
     private String destinationFileName;
     private OutputStream destinationStream;
     private boolean ignoreAcroFormErrors = false;
@@ -120,34 +121,24 @@ public class PDFMergerUtility
      * Add a source file to the list of files to merge.
      *
      * @param source Full path and file name of source document.
+     * 
+     * @throws FileNotFoundException If the file doesn't exist
      */
-    public void addSource(String source)
+    public void addSource(String source) throws FileNotFoundException
     {
-        try
-        {
-            sources.add(new FileInputStream(new File(source)));
-        }
-        catch (Exception e)
-        {
-            throw new RuntimeException(e);
-        }
+        sources.add(new FileInputStream(new File(source)));
     }
 
     /**
      * Add a source file to the list of files to merge.
      *
      * @param source File representing source document
+     * 
+     * @throws FileNotFoundException If the file doesn't exist
      */
-    public void addSource(File source)
+    public void addSource(File source) throws FileNotFoundException
     {
-        try
-        {
-            sources.add(new FileInputStream(source));
-        }
-        catch (Exception e)
-        {
-            throw new RuntimeException(e);
-        }
+        sources.add(new FileInputStream(source));
     }
 
     /**
@@ -202,20 +193,12 @@ public class PDFMergerUtility
         PDDocument source;
         if (sources != null && sources.size() > 0)
         {
-            java.util.Vector<PDDocument> tobeclosed = new java.util.Vector<PDDocument>();
+            ArrayList<PDDocument> tobeclosed = new ArrayList<PDDocument>();
 
             try
             {
                 Iterator<InputStream> sit = sources.iterator();
-                sourceFile = sit.next();
-                if (isNonSeq)
-                {
-                    destination = PDDocument.loadNonSeq(sourceFile, scratchFile);
-                }
-                else
-                {
-                    destination = PDDocument.load(sourceFile);
-                }
+                destination = new PDDocument();
 
                 while (sit.hasNext())
                 {
@@ -295,23 +278,6 @@ public class PDFMergerUtility
             destCatalog.setOpenAction(srcCatalog.getOpenAction());
         }
 
-        // maybe there are some shared resources for all pages
-        COSDictionary srcPages = (COSDictionary) srcCatalog.getCOSDictionary().getDictionaryObject(COSName.PAGES);
-        COSDictionary srcResources = (COSDictionary) srcPages.getDictionaryObject(COSName.RESOURCES);
-        COSDictionary destPages = (COSDictionary) destCatalog.getCOSDictionary().getDictionaryObject(COSName.PAGES);
-        COSDictionary destResources = (COSDictionary) destPages.getDictionaryObject(COSName.RESOURCES);
-        if (srcResources != null)
-        {
-            if (destResources != null)
-            {
-                destResources.mergeInto(srcResources);
-            }
-            else
-            {
-                destPages.setItem(COSName.RESOURCES, srcResources);
-            }
-        }
-
         PDFCloneUtility cloner = new PDFCloneUtility(destination);
 
         try
@@ -331,12 +297,12 @@ public class PDFMergerUtility
                 }
             }
         }
-        catch (Exception e)
+        catch (IOException e)
         {
             // if we are not ignoring exceptions, we'll re-throw this
             if (!ignoreAcroFormErrors)
             {
-                throw (IOException) e;
+                throw new IOException(e);
             }
         }
 
@@ -364,7 +330,6 @@ public class PDFMergerUtility
             {
                 cloner.cloneMerge(srcNames, destNames);
             }
-
         }
 
         PDDocumentOutline destOutline = destCatalog.getDocumentOutline();
@@ -401,7 +366,7 @@ public class PDFMergerUtility
         if (srcLabels != null)
         {
             int destPageCount = destination.getNumberOfPages();
-            COSArray destNums = null;
+            COSArray destNums;
             if (destLabels == null)
             {
                 destLabels = new COSDictionary();
@@ -490,7 +455,6 @@ public class PDFMergerUtility
             }
         }
 
-        // finally append the pages
         List<PDPage> pages = srcCatalog.getAllPages();
         Iterator<PDPage> pageIter = pages.iterator();
         HashMap<COSDictionary, COSDictionary> objMapping = new HashMap<COSDictionary, COSDictionary>();
@@ -501,6 +465,8 @@ public class PDFMergerUtility
             newPage.setCropBox(page.findCropBox());
             newPage.setMediaBox(page.findMediaBox());
             newPage.setRotation(page.findRotation());
+            // this is smart enough to just create references for resources that are used on multiple pages
+            newPage.setResources(new PDResources((COSDictionary) cloner.cloneForNewDocument(page.findResources())));
             if (mergeStructTree)
             {
                 updateStructParentEntries(newPage, destParentTreeNextKey);
@@ -564,28 +530,28 @@ public class PDFMergerUtility
     private void mergeAcroForm(PDFCloneUtility cloner, PDAcroForm destAcroForm, PDAcroForm srcAcroForm)
             throws IOException
     {
-        List destFields = destAcroForm.getFields();
-        List srcFields = srcAcroForm.getFields();
+        List<PDFieldTreeNode> destFields = destAcroForm.getFields();
+        List<PDFieldTreeNode> srcFields = srcAcroForm.getFields();
         if (srcFields != null)
         {
             if (destFields == null)
             {
-                destFields = new COSArrayList();
+                destFields = new COSArrayList<PDFieldTreeNode>();
                 destAcroForm.setFields(destFields);
             }
-            Iterator srcFieldsIterator = srcFields.iterator();
+            Iterator<PDFieldTreeNode> srcFieldsIterator = srcFields.iterator();
             while (srcFieldsIterator.hasNext())
             {
-                PDField srcField = (PDField) srcFieldsIterator.next();
-                PDField destField = PDFieldFactory.createField(destAcroForm,
-                        (COSDictionary) cloner.cloneForNewDocument(srcField.getDictionary()));
+                PDFieldTreeNode srcField = srcFieldsIterator.next();
+                PDFieldTreeNode destFieldNode = PDFieldTreeNode.createField(destAcroForm,
+                        (COSDictionary) cloner.cloneForNewDocument(srcField.getDictionary()), null);
                 // if the form already has a field with this name then we need to rename this field
                 // to prevent merge conflicts.
-                if (destAcroForm.getField(destField.getFullyQualifiedName()) != null)
+                if (destAcroForm.getField(destFieldNode.getFullyQualifiedName()) != null)
                 {
-                    destField.setPartialName("dummyFieldName" + (nextFieldNum++));
+                    destFieldNode.setPartialName("dummyFieldName" + (nextFieldNum++));
                 }
-                destFields.add(destField);
+                destFields.add(destFieldNode);
             }
         }
     }

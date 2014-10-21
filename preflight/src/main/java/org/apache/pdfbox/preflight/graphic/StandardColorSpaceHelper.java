@@ -40,6 +40,7 @@ import java.util.Map;
 
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSBase;
+import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.graphics.color.PDColorSpace;
 import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceN;
@@ -242,30 +243,25 @@ public class StandardColorSpaceHelper implements ColorSpaceHelper
                         "Unable to read ICCBase color space "));
                 return;
             }
-            List<PDColorSpace> altCs = iccBased.getAlternateColorSpaces();
-            for (PDColorSpace altpdcs : altCs)
+            PDColorSpace altpdcs = iccBased.getAlternateColorSpace();
+            if (altpdcs != null)
             {
-                if (altpdcs != null)
+                ColorSpaces altCsId = ColorSpaces.valueOf(altpdcs.getName());
+                if (altCsId == ColorSpaces.Pattern)
                 {
-
-                    ColorSpaces altCsId = ColorSpaces.valueOf(altpdcs.getName());
-                    if (altCsId == ColorSpaces.Pattern)
-                    {
-                        context.addValidationError(new ValidationError(
-                                ERROR_GRAPHIC_INVALID_PATTERN_COLOR_SPACE_FORBIDDEN,
-                                "Pattern is forbidden as AlternateColorSpace of a ICCBased"));
-                        return;
-                    }
-
-                    /*
-                     * According to the ISO-19005-1:2005
-                     * 
-                     * A conforming reader shall render ICCBased colour spaces as specified by the ICC specification,
-                     * and shall not use the Alternate colour space specified in an ICC profile stream dictionary
-                     * 
-                     * We don't check the alternate ColorSpaces
-                     */
+                    context.addValidationError(new ValidationError(
+                            ERROR_GRAPHIC_INVALID_PATTERN_COLOR_SPACE_FORBIDDEN,
+                            "Pattern is forbidden as AlternateColorSpace of a ICCBased"));
                 }
+
+                /*
+                 * According to the ISO-19005-1:2005
+                 * 
+                 * A conforming reader shall render ICCBased colour spaces as specified by the ICC specification,
+                 * and shall not use the Alternate colour space specified in an ICC profile stream dictionary
+                 * 
+                 * We don't check the alternate ColorSpaces
+                 */
             }
         }        
         catch (IllegalArgumentException e)
@@ -421,22 +417,29 @@ public class StandardColorSpaceHelper implements ColorSpaceHelper
         // get default color space
         PreflightPath vPath = context.getValidationPath();
         PDResources resources = vPath.getClosestPathElement(PDResources.class);
-        if (resources != null && resources.getColorSpaces() != null)
+        if (resources != null)
         {
             PDColorSpace defaultCS = null;
 
-            Map<String, PDColorSpace> colorsSpaces = resources.getColorSpaces();
-            if (pdcs.getName().equals(ColorSpaces.DeviceCMYK.getLabel()))
+            try
             {
-                defaultCS = colorsSpaces.get("DefaultCMYK");
+                if (pdcs.getName().equals(ColorSpaces.DeviceCMYK.getLabel()))
+                {
+                    defaultCS = resources.getColorSpace(COSName.DEFAULT_CMYK);
+                }
+                else if (pdcs.getName().equals(ColorSpaces.DeviceRGB.getLabel()))
+                {
+                    defaultCS = resources.getColorSpace(COSName.DEFAULT_RGB);
+                }
+                else if (pdcs.getName().equals(ColorSpaces.DeviceGray.getLabel()))
+                {
+                    defaultCS = resources.getColorSpace(COSName.DEFAULT_GRAY);
+                }
             }
-            else if (pdcs.getName().equals(ColorSpaces.DeviceRGB.getLabel()))
+            catch (IOException e)
             {
-                defaultCS = colorsSpaces.get("DefaultRGB");
-            }
-            else if (pdcs.getName().equals(ColorSpaces.DeviceGray.getLabel()))
-            {
-                defaultCS = colorsSpaces.get("DefaultGray");
+                context.addValidationError(new ValidationError(ERROR_GRAPHIC_INVALID_COLOR_SPACE,
+                        "Unable to read default color space : " + e.getMessage()));
             }
 
             if (defaultCS != null)

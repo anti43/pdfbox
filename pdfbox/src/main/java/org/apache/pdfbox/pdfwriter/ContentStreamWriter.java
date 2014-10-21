@@ -31,7 +31,7 @@ import org.apache.pdfbox.cos.COSInteger;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSString;
 
-import org.apache.pdfbox.util.operator.Operator;
+import org.apache.pdfbox.contentstream.operator.Operator;
 
 /**
  * A class that will take a list of tokens and write out a stream with them.
@@ -136,7 +136,7 @@ public class ContentStreamWriter
         else if( o instanceof Operator)
         {
             Operator op = (Operator)o;
-            if( op.getOperation().equals( "BI" ) )
+            if( op.getName().equals( "BI" ) )
             {
                 output.write( "BI".getBytes("ISO-8859-1") );
                 COSDictionary dic = op.getImageParameters();
@@ -154,7 +154,7 @@ public class ContentStreamWriter
             }
             else
             {
-                output.write( op.getOperation().getBytes("ISO-8859-1") );
+                output.write( op.getName().getBytes("ISO-8859-1") );
                 output.write( EOL );
             }
         }

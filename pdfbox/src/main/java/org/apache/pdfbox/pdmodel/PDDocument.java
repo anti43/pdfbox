@@ -17,6 +17,7 @@
 package org.apache.pdfbox.pdmodel;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileInputStream;
@@ -39,7 +40,6 @@ import org.apache.pdfbox.cos.COSInteger;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSObject;
 import org.apache.pdfbox.cos.COSStream;
-import org.apache.pdfbox.io.RandomAccess;
 import org.apache.pdfbox.pdfparser.BaseParser;
 import org.apache.pdfbox.pdfparser.NonSequentialPDFParser;
 import org.apache.pdfbox.pdfparser.PDFParser;
@@ -63,7 +63,7 @@ import org.apache.pdfbox.pdmodel.interactive.digitalsignature.PDSignature;
 import org.apache.pdfbox.pdmodel.interactive.digitalsignature.SignatureInterface;
 import org.apache.pdfbox.pdmodel.interactive.digitalsignature.SignatureOptions;
 import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm;
-import org.apache.pdfbox.pdmodel.interactive.form.PDField;
+import org.apache.pdfbox.pdmodel.interactive.form.PDFieldTreeNode;
 import org.apache.pdfbox.pdmodel.interactive.form.PDSignatureField;
 
 /**
@@ -289,7 +289,7 @@ public class PDDocument implements Closeable
         rootPages.getAllKids(kids);
 
         int size = (int) rootPages.getCount();
-        PDPage page = null;
+        PDPage page;
         if (size == 0)
         {
             throw new IllegalStateException("Cannot sign an empty document");
@@ -329,14 +329,14 @@ public class PDDocument implements Closeable
         // Create Annotation / Field for signature
         List<PDAnnotation> annotations = page.getAnnotations();
 
-        List<PDField> fields = acroForm.getFields();
+        List<PDFieldTreeNode> fields = acroForm.getFields();
         PDSignatureField signatureField = null;
         if(fields == null) 
         {
-            fields = new ArrayList();
+            fields = new ArrayList<PDFieldTreeNode>();
             acroForm.setFields(fields);
         }
-        for (PDField pdField : fields)
+        for (PDFieldTreeNode pdField : fields)
         {
             if (pdField instanceof PDSignatureField)
             {
@@ -355,13 +355,13 @@ public class PDDocument implements Closeable
         }
 
         // Set the AcroForm Fields
-        List<PDField> acroFormFields = acroForm.getFields();
-        COSDictionary acroFormDict = acroForm.getDictionary();
-        acroFormDict.setDirect(true);
-        acroFormDict.setInt(COSName.SIG_FLAGS, 3);
+        List<PDFieldTreeNode> acroFormFields = acroForm.getFields();
+        acroForm.getDictionary().setDirect(true);
+        acroForm.setSignaturesExist(true);
+        acroForm.setAppendOnly(true);
 
         boolean checkFields = false;
-        for (PDField field : acroFormFields)
+        for (PDFieldTreeNode field : acroFormFields)
         {
             if (field instanceof PDSignatureField)
             {
@@ -387,7 +387,7 @@ public class PDDocument implements Closeable
             // Set rectangle for non-visual signature to 0 0 0 0
             signatureField.getWidget().setRectangle(new PDRectangle()); // rectangle array [ 0 0 0 0 ]
             // Clear AcroForm / Set DefaultRessource
-            acroFormDict.setItem(COSName.DR, null);
+            acroForm.setDefaultResources(null);
             // Set empty Appearance-Dictionary
             PDAppearanceDictionary ap = new PDAppearanceDictionary();
             COSStream apsStream = getDocument().createCOSStream();
@@ -409,7 +409,7 @@ public class PDDocument implements Closeable
 
             boolean annotNotFound = true;
             boolean sigFieldNotFound = true;
-
+            COSDictionary acroFormDict = acroForm.getDictionary();
             for (COSObject cosObject : cosObjects)
             {
                 if (!annotNotFound && !sigFieldNotFound)
@@ -482,7 +482,7 @@ public class PDDocument implements Closeable
     }
 
     /**
-     * This will add a signaturefield to the document.
+     * This will add a signature field to the document.
      * 
      * @param sigFields are the PDSignatureFields that should be added to the document
      * @param signatureInterface is a interface which provides signing capabilities
@@ -509,12 +509,12 @@ public class PDDocument implements Closeable
         COSDictionary acroFormDict = acroForm.getDictionary();
         acroFormDict.setDirect(true);
         acroFormDict.setNeedToBeUpdate(true);
-        if (acroFormDict.getInt(COSName.SIG_FLAGS) < 1)
+        if (!acroForm.isSignaturesExist())
         {
-            acroFormDict.setInt(COSName.SIG_FLAGS, 1); // 1 if at least one signature field is available
+            acroForm.setSignaturesExist(true); // 1 if at least one signature field is available
         }
 
-        List<PDField> field = acroForm.getFields();
+        List<PDFieldTreeNode> field = acroForm.getFields();
 
         for (PDSignatureField sigField : sigFields)
         {
@@ -523,11 +523,11 @@ public class PDDocument implements Closeable
 
             // Check if the field already exist
             boolean checkFields = false;
-            for (Object obj : field)
+            for (PDFieldTreeNode fieldNode : field)
             {
-                if (obj instanceof PDSignatureField)
+                if (fieldNode instanceof PDSignatureField)
                 {
-                    if (((PDSignatureField) obj).getCOSObject().equals(sigField.getCOSObject()))
+                    if (fieldNode.getCOSObject().equals(sigField.getCOSObject()))
                     {
                         checkFields = true;
                         sigField.getCOSObject().setNeedToBeUpdate(true);
@@ -617,7 +617,7 @@ public class PDDocument implements Closeable
                 os = dest.createOutputStream();
 
                 byte[] buf = new byte[10240];
-                int amountRead = 0;
+                int amountRead;
                 is = src.createInputStream();
                 while ((amountRead = is.read(buf, 0, 10240)) > -1)
                 {
@@ -813,7 +813,7 @@ public class PDDocument implements Closeable
             List<COSDictionary> signatureDictionary = document.getSignatureFields(false);
             for (COSDictionary dict : signatureDictionary)
             {
-                fields.add(new PDSignatureField(acroForm, dict));
+                fields.add(new PDSignatureField(acroForm, dict, null));
             }
         }
         return fields;
@@ -851,7 +851,6 @@ public class PDDocument implements Closeable
     {
         StandardDecryptionMaterial m = new StandardDecryptionMaterial(password);
         openProtection(m);
-        document.dereferenceObjectStreams();
     }
 
     /**
@@ -936,18 +935,20 @@ public class PDDocument implements Closeable
     }
 
     /**
-     * This will load a document from a url.
+     * This will load a document from a url. Used for skipping corrupt pdf objects
      * 
      * @param url The url to load the PDF from.
-     * @param scratchFile A location to store temp PDFBox data for this document.
+     * @param force When true, the parser will skip corrupt pdf objects and will continue parsing at the next object in
+     *            the file
+     * @param useScratchFiles enables the usage of a scratch file if set to true
      * 
      * @return The document that was loaded.
      * 
      * @throws IOException If there is an error reading from the stream.
      */
-    public static PDDocument load(URL url, RandomAccess scratchFile) throws IOException
+    public static PDDocument load(URL url, boolean force, boolean useScratchFiles) throws IOException
     {
-        return load(url.openStream(), scratchFile);
+        return load(url.openStream(), force, useScratchFiles);
     }
 
     /**
@@ -981,18 +982,20 @@ public class PDDocument implements Closeable
     }
 
     /**
-     * This will load a document from a file.
+     * This will load a document from a file. Allows for skipping corrupt pdf objects
      * 
      * @param filename The name of the file to load.
-     * @param scratchFile A location to store temp PDFBox data for this document.
+     * @param force When true, the parser will skip corrupt pdf objects and will continue parsing at the next object in
+     *            the file
+     * @param useScratchFiles enables the usage of a scratch file if set to true
      * 
      * @return The document that was loaded.
      * 
      * @throws IOException If there is an error reading from the stream.
      */
-    public static PDDocument load(String filename, RandomAccess scratchFile) throws IOException
+    public static PDDocument load(String filename, boolean force, boolean useScratchFiles) throws IOException
     {
-        return load(new File(filename), scratchFile, false);
+        return load(new File(filename), force, useScratchFiles);
     }
 
     /**
@@ -1006,7 +1009,7 @@ public class PDDocument implements Closeable
      */
     public static PDDocument load(File file) throws IOException
     {
-        return load(file, false);
+        return load(file, BaseParser.FORCE_PARSING, false);
     }
 
     /**
@@ -1022,7 +1025,28 @@ public class PDDocument implements Closeable
      */
     public static PDDocument load(File file, boolean force) throws IOException
     {
-        return load(file, null, force);
+        return load(file, force , false);
+    }
+
+    /**
+     * This will load a document from a file. Allows for skipping corrupt pdf objects
+     *
+     * @param file The name of the file to load.
+     * @param force When true, the parser will skip corrupt pdf objects and will continue parsing at the next object in
+     *            the file
+     * @param useScratchFiles enables the usage of a scratch file if set to true
+     *
+     * @return The document that was loaded.
+     *
+     * @throws IOException If there is an error reading from the stream.
+     */
+    public static PDDocument load(File file, boolean force, boolean useScratchFiles) throws IOException
+    {
+        PDFParser parser = new PDFParser(new FileInputStream(file), force, useScratchFiles);
+        parser.parse();
+        PDDocument doc = parser.getPDDocument();
+        doc.incrementalFile = file;
+        return doc;
     }
 
     /**
@@ -1036,7 +1060,7 @@ public class PDDocument implements Closeable
      */
     public static PDDocument load(InputStream input) throws IOException
     {
-        return load(input, null);
+        return load(input, BaseParser.FORCE_PARSING, false);
     }
 
     /**
@@ -1052,108 +1076,85 @@ public class PDDocument implements Closeable
      */
     public static PDDocument load(InputStream input, boolean force) throws IOException
     {
-        return load(input, null, force);
-    }
-
-    /**
-     * This will load a document from an input stream.
-     *
-     * @param file The name of the file to load.
-     * @param scratchFile A location to store temp PDFBox data for this document.
-     * @return The document that was loaded.
-     *
-     * @throws IOException If there is an error reading from the stream.
-     */
-    public static PDDocument load(File file, RandomAccess scratchFile) throws IOException
-    {
-        return load(file, scratchFile, false);
-    }
-
-    /**
-     * This will load a document from an input stream.
-     *
-     * @param file The name of the file to load.
-     * @param scratchFile A location to store temp PDFBox data for this document.
-     * @param force When true, the parser will skip corrupt pdf objects and will continue parsing at the next object in
-     *            the file
-     * @return The document that was loaded.
-     *
-     * @throws IOException If there is an error reading from the stream.
-     */
-    public static PDDocument load(File file, RandomAccess scratchFile, boolean force) throws IOException
-    {
-        PDFParser parser = new PDFParser(new BufferedInputStream(new FileInputStream(file)), scratchFile, force);
-        parser.parse();
-        PDDocument doc = parser.getPDDocument();
-        doc.incrementalFile = file;
-        return doc;
-    }
-
-    /**
-     * This will load a document from an input stream.
-     * 
-     * @param input The stream that contains the document.
-     * @param scratchFile A location to store temp PDFBox data for this document.
-     * 
-     * @return The document that was loaded.
-     * 
-     * @throws IOException If there is an error reading from the stream.
-     */
-    public static PDDocument load(InputStream input, RandomAccess scratchFile) throws IOException
-    {
-        PDFParser parser = new PDFParser(new BufferedInputStream(input), scratchFile);
-        parser.parse();
-        return parser.getPDDocument();
+        return load(input, force, false);
     }
 
     /**
      * This will load a document from an input stream. Allows for skipping corrupt pdf objects
      * 
      * @param input The stream that contains the document.
-     * @param scratchFile A location to store temp PDFBox data for this document.
      * @param force When true, the parser will skip corrupt pdf objects and will continue parsing at the next object in
      *            the file
+     * @param useScratchFiles enables the usage of a scratch file if set to true
      * 
      * @return The document that was loaded.
      * 
      * @throws IOException If there is an error reading from the stream.
      */
-    public static PDDocument load(InputStream input, RandomAccess scratchFile, boolean force) throws IOException
+    public static PDDocument load(InputStream input, boolean force, boolean useScratchFiles) throws IOException
     {
-        PDFParser parser = new PDFParser(new BufferedInputStream(input), scratchFile, force);
+        PDFParser parser = new PDFParser(input, force, useScratchFiles);
         parser.parse();
         return parser.getPDDocument();
     }
-
     /**
      * Parses PDF with non sequential parser.
      * 
      * @param file file to be loaded
-     * @param scratchFile location to store temp PDFBox data for this document
      * 
      * @return loaded document
      * 
      * @throws IOException in case of a file reading or parsing error
      */
-    public static PDDocument loadNonSeq(File file, RandomAccess scratchFile) throws IOException
+    public static PDDocument loadNonSeq(File file) throws IOException
     {
-        return loadNonSeq(file, scratchFile, "");
+        return loadNonSeq(file, "", false);
     }
 
     /**
      * Parses PDF with non sequential parser.
      * 
      * @param file file to be loaded
-     * @param scratchFile location to store temp PDFBox data for this document
+     * @param useScratchFiles enables the usage of a scratch file if set to true
+     * 
+     * @return loaded document
+     * 
+     * @throws IOException in case of a file reading or parsing error
+     */
+    public static PDDocument loadNonSeq(File file, boolean useScratchFiles) throws IOException
+    {
+        return loadNonSeq(file, "", useScratchFiles);
+    }
+
+    /**
+     * Parses PDF with non sequential parser.
+     * 
+     * @param file file to be loaded
      * @param password password to be used for decryption
      * 
      * @return loaded document
      * 
      * @throws IOException in case of a file reading or parsing error
      */
-    public static PDDocument loadNonSeq(File file, RandomAccess scratchFile, String password) throws IOException
+    public static PDDocument loadNonSeq(File file, String password) throws IOException
     {
-        NonSequentialPDFParser parser = new NonSequentialPDFParser(file, scratchFile, password);
+        return loadNonSeq(file, password, false);
+    }
+
+    /**
+     * Parses PDF with non sequential parser.
+     * 
+     * @param file file to be loaded
+     * @param password password to be used for decryption
+     * @param useScratchFiles enables the usage of a scratch file if set to true
+     * 
+     * @return loaded document
+     * 
+     * @throws IOException in case of a file reading or parsing error
+     */
+    public static PDDocument loadNonSeq(File file, String password, boolean useScratchFiles) throws IOException
+    {
+        NonSequentialPDFParser parser = new NonSequentialPDFParser(file, password, useScratchFiles);
         parser.parse();
         return parser.getPDDocument();
     }
@@ -1162,32 +1163,62 @@ public class PDDocument implements Closeable
      * Parses PDF with non sequential parser.
      * 
      * @param input stream that contains the document.
-     * @param scratchFile location to store temp PDFBox data for this document
      * 
      * @return loaded document
      * 
      * @throws IOException in case of a file reading or parsing error
      */
-    public static PDDocument loadNonSeq(InputStream input, RandomAccess scratchFile) throws IOException
+    public static PDDocument loadNonSeq(InputStream input) throws IOException
     {
-        return loadNonSeq(input, scratchFile, "");
+        return loadNonSeq(input, "", false);
     }
 
     /**
      * Parses PDF with non sequential parser.
      * 
      * @param input stream that contains the document.
-     * @param scratchFile location to store temp PDFBox data for this document
+     * @param useScratchFiles enables the usage of a scratch file if set to true
+     * 
+     * @return loaded document
+     * 
+     * @throws IOException in case of a file reading or parsing error
+     */
+    public static PDDocument loadNonSeq(InputStream input, boolean useScratchFiles) throws IOException
+    {
+        return loadNonSeq(input, "", useScratchFiles);
+    }
+
+    /**
+     * Parses PDF with non sequential parser.
+     * 
+     * @param input stream that contains the document.
      * @param password password to be used for decryption
      * 
      * @return loaded document
      * 
      * @throws IOException in case of a file reading or parsing error
      */
-    public static PDDocument loadNonSeq(InputStream input, RandomAccess scratchFile, String password)
+    public static PDDocument loadNonSeq(InputStream input, String password)
             throws IOException
     {
-        NonSequentialPDFParser parser = new NonSequentialPDFParser(input, scratchFile, password);
+        return loadNonSeq(input, password, false);
+    }
+
+    /**
+     * Parses PDF with non sequential parser.
+     * 
+     * @param input stream that contains the document.
+     * @param password password to be used for decryption
+     * @param useScratchFiles enables the usage of a scratch file if set to true
+     * 
+     * @return loaded document
+     * 
+     * @throws IOException in case of a file reading or parsing error
+     */
+    public static PDDocument loadNonSeq(InputStream input, String password, boolean useScratchFiles)
+            throws IOException
+    {
+        NonSequentialPDFParser parser = new NonSequentialPDFParser(input, password, useScratchFiles);
         parser.parse();
         return parser.getPDDocument();
     }
@@ -1258,7 +1289,8 @@ public class PDDocument implements Closeable
     @Deprecated
     public void saveIncremental(String fileName) throws IOException
     {
-        saveIncremental(new FileInputStream(fileName), new FileOutputStream(fileName, true));
+        saveIncremental(new BufferedInputStream(new FileInputStream(fileName)),
+                new BufferedOutputStream(new FileOutputStream(fileName, true)));
     }
 
     /**
@@ -1364,6 +1396,8 @@ public class PDDocument implements Closeable
      * @see org.apache.pdfbox.pdmodel.encryption.PublicKeyProtectionPolicy
      * 
      * @param policy The protection policy.
+     * 
+     * @throws IOException if there isn't any suitable security handler.
      */
     public void protect(ProtectionPolicy policy) throws IOException
     {
@@ -1398,6 +1432,7 @@ public class PDDocument implements Closeable
             getEncryption().getSecurityHandler().decryptDocument(this, decryptionMaterial);
             document.dereferenceObjectStreams();
             document.setEncryptionDictionary(null);
+            getDocumentCatalog();
         }
         else
         {

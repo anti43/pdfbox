@@ -21,6 +21,8 @@ package org.apache.fontbox.type1;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 /**
  * Lexer for the ASCII portions of an Adobe Type 1 font.
@@ -42,7 +44,12 @@ import java.nio.ByteBuffer;
  */
 class Type1Lexer
 {
-    private ByteBuffer buffer;
+    /**
+     * Log instance.
+     */
+    private static final Log LOG = LogFactory.getLog(Type1Lexer.class);
+    
+    private final ByteBuffer buffer;
     private Token aheadToken;
     private int openParens = 0;
 
@@ -53,7 +60,7 @@ class Type1Lexer
      */
     public Type1Lexer(byte[] bytes) throws IOException
     {
-        this.buffer = ByteBuffer.wrap(bytes);
+        buffer = ByteBuffer.wrap(bytes);
         aheadToken = readToken(null);
     }
 
@@ -139,6 +146,11 @@ class Type1Lexer
                 {
                     skip = true;
                 }
+                else if (c == 0)
+                {
+                    LOG.warn("NULL byte in font, skipped");
+                    skip = true;
+                }
                 else
                 {
                     buffer.position(buffer.position() -1);
@@ -153,6 +165,12 @@ class Type1Lexer
                     {
                         // otherwise this must be a name
                         String name = readRegular();
+                        if (name == null)
+                        {
+                            // the stream is corrupt
+                            throw new DamagedFontException("Could not read token at position " +
+                                                           buffer.position());
+                        }
 
                         if (name.equals("RD") || name.equals("-|"))
                         {
@@ -185,6 +203,7 @@ class Type1Lexer
         buffer.mark();
 
         StringBuilder sb = new StringBuilder();
+        StringBuilder radix = null;
         char c = getChar();
         boolean hasDigit = false;
 
@@ -207,6 +226,13 @@ class Type1Lexer
         if (c == '.')
         {
             sb.append(c);
+            c = getChar();
+        }
+        else if (c == '#')
+        {
+            // PostScript radix number takes the form base#number
+            radix = sb;
+            sb = new StringBuilder();
             c = getChar();
         }
         else if (sb.length() == 0 || !hasDigit)
@@ -247,6 +273,13 @@ class Type1Lexer
         {
             sb.append(c);
             c = getChar();
+            
+            // optional minus
+            if (c == '-')
+            {
+                sb.append(c);
+                c = getChar();
+            }
 
             // required digit
             if (Character.isDigit(c))
@@ -268,9 +301,13 @@ class Type1Lexer
                 c = getChar();
             }
         }
-
-        // real
-        buffer.position(buffer.position() -1);
+        
+        buffer.position(buffer.position() - 1);
+        if (radix != null)
+        {
+            Integer val = Integer.parseInt(sb.toString(), Integer.parseInt(radix.toString()));
+            return new Token(val.toString(), Token.INTEGER);
+        }
         return new Token(sb.toString(), Token.REAL);
     }
 
@@ -300,7 +337,12 @@ class Type1Lexer
                 sb.append(c);
             }
         }
-        return sb.toString();
+        String regular = sb.toString();
+        if (regular.length() == 0)
+        {
+            return null;
+        }
+        return regular;
     }
 
     /**

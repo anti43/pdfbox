@@ -1,0 +1,62 @@
+From 5830cf761d02f83c5484fb05462aaf9d970867c2 Mon Sep 17 00:00:00 2001
+From: Tilman Hausherr <tilman@apache.org>
+Date: Wed, 30 Apr 2014 16:07:57 +0000
+Subject: [PATCH] PDFBOX-2034: refactoring per DRY
+
+git-svn-id: https://svn.apache.org/repos/asf/pdfbox/trunk@1591375 13f79535-47bb-0310-9956-ffa450edef68
+---
+ .../java/org/apache/pdfbox/filter/TestFilters.java | 31 +++++++++-------------
+ 1 file changed, 13 insertions(+), 18 deletions(-)
+
+diff --git a/pdfbox/src/test/java/org/apache/pdfbox/filter/TestFilters.java b/pdfbox/src/test/java/org/apache/pdfbox/filter/TestFilters.java
+index e125d2a..f105211 100644
+--- a/pdfbox/src/test/java/org/apache/pdfbox/filter/TestFilters.java
++++ b/pdfbox/src/test/java/org/apache/pdfbox/filter/TestFilters.java
+@@ -101,18 +101,7 @@ public void testFilters() throws IOException
+                             continue;
+                         }
+ 
+-                    ByteArrayOutputStream encoded = new ByteArrayOutputStream();
+-                    filter.encode(new ByteArrayInputStream( original ),
+-                                  encoded, new COSDictionary() );
+-
+-                    ByteArrayOutputStream decoded = new ByteArrayOutputStream();
+-                    filter.decode(new ByteArrayInputStream( encoded.toByteArray() ),
+-                                  decoded, new COSDictionary() );
+-
+-                    assertTrue(
+-                               "Data that is encoded and then decoded through "
+-                               + filter.getClass() + " does not match the original data",
+-                               Arrays.equals( original, decoded.toByteArray() ) );
++                    checkEncodeDecode(filter, original);
+                 }
+                 success = true;
+             } 
+@@ -145,15 +134,21 @@ public void testPDFBOX1777() throws IOException
+             baos.write(by);
+         }
+         is.close();
++        
++        checkEncodeDecode(lzwFilter, baos.toByteArray());
++    }
++
++    private void checkEncodeDecode(Filter filter, byte[] original) throws IOException
++    {
+         ByteArrayOutputStream encoded = new ByteArrayOutputStream();
+-        lzwFilter.encode(new ByteArrayInputStream(baos.toByteArray()),
+-                encoded, new COSDictionary());
++        filter.encode(new ByteArrayInputStream(original), encoded, new COSDictionary());
+         ByteArrayOutputStream decoded = new ByteArrayOutputStream();
+-        lzwFilter.decode(new ByteArrayInputStream(encoded.toByteArray()),
++        filter.decode(new ByteArrayInputStream(encoded.toByteArray()),
+                 decoded, new COSDictionary());
++
+         assertTrue(
+-                "PDFBOX-1777 data that is encoded and then decoded through "
+-                + lzwFilter.getClass() + " does not match the original data",
+-                Arrays.equals(baos.toByteArray(), decoded.toByteArray()));
++                "Data that is encoded and then decoded through "
++                + filter.getClass() + " does not match the original data",
++                Arrays.equals(original, decoded.toByteArray()));
+     }
+ }
