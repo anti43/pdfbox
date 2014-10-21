@@ -178,6 +178,19 @@ public class PageDrawer extends PDFGraphicsStreamEngine
     }
 
     /**
+     * Sets high-quality rendering hints on the current Graphics2D.
+     */
+    private void setRenderingHints()
+    {
+        graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                                  RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+        graphics.setRenderingHint(RenderingHints.KEY_RENDERING,
+                                  RenderingHints.VALUE_RENDER_QUALITY);
+        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                                  RenderingHints.VALUE_ANTIALIAS_ON);
+    }
+
+    /**
      * This will draw the page to the requested context.
      *
      * @param g The graphics context to draw onto.
@@ -188,9 +201,11 @@ public class PageDrawer extends PDFGraphicsStreamEngine
     public void drawPage(Graphics g, PDRectangle pageSize) throws IOException
     {
         graphics = (Graphics2D) g;
+
         //this.pageSize = pageSize;
         applyRenderingHints(graphics);
         graphics.translate(0, (int)pageSize.getHeight());
+
         graphics.scale(1, -1);
         // TODO use getStroke() to set the initial stroke
         graphics.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER));
@@ -456,7 +471,9 @@ public class PageDrawer extends PDFGraphicsStreamEngine
         Font awtFont = createAWTFont(font);
         FontRenderContext frc = new FontRenderContext(new AffineTransform(), true, true);
         GlyphVector glyphs = awtFont.createGlyphVector(frc, string);
+
         applyRenderingHints(graphics);
+
         writeFont(at, glyphs);
     }
 
