@@ -982,7 +982,7 @@ public class PageDrawer extends PDFGraphicsStreamEngine
             if (targetWidth>=3 && targetHeight>=3)
             {
                 ResampleOp  resampleOp = new ResampleOp(targetWidth,targetHeight);
-                if (highQuality)
+                if (isHighQuality())
                 {
                    resampleOp.setUnsharpenMask(AdvancedResizeOp.UnsharpenMask.Normal);
                    resampleOp.setFilter(ResampleFilters.getLanczos3Filter());
@@ -1038,7 +1038,7 @@ public class PageDrawer extends PDFGraphicsStreamEngine
             if (targetWidth>=3 && targetHeight>=3)
             {
                 ResampleOp  resampleOp = new ResampleOp(targetWidth,targetHeight);
-                if (highQuality)
+                if (isHighQuality())
                 {
                    resampleOp.setUnsharpenMask(AdvancedResizeOp.UnsharpenMask.Normal);
                    resampleOp.setFilter(ResampleFilters.getLanczos3Filter());
@@ -1116,6 +1116,20 @@ public class PageDrawer extends PDFGraphicsStreamEngine
             restoreGraphicsState();
         }
     }
+
+   /**
+    * @return the highQuality
+    */
+   public boolean isHighQuality() {
+      return highQuality;
+   }
+
+   /**
+    * @param highQuality the highQuality to set
+    */
+   public void setHighQuality(boolean highQuality) {
+      this.highQuality = highQuality;
+   }
 
     /**
      * Transparency group.
