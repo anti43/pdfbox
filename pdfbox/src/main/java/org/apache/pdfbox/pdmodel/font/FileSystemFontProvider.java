@@ -116,6 +116,11 @@ final class FileSystemFontProvider implements FontProvider
             LOG.error("Could not load font file: " + otfFile, e);
         }
 
+       if (ttf == null) {
+          LOG.warn("Could not load TrueTypeFont from file: " + otfFile);
+          return;
+       }
+        
         try
         {
             // check for 'name' table
